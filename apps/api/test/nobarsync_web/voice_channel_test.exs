@@ -20,7 +20,7 @@ defmodule NobarSyncWeb.VoiceChannelTest do
     %{room: room, socket: socket}
   end
 
-  test "relays fixed audio frames with server identity, drops replay and muted audio", %{
+  test "starts muted, then relays frames with server identity and drops replay", %{
     room: room,
     socket: socket
   } do
@@ -29,6 +29,11 @@ defmodule NobarSyncWeb.VoiceChannelTest do
 
     peer_id = reply.peer_id
     frame = Base.encode64(:binary.copy(<<200>>, 1280))
+    ref = push(socket, "voice.audio", %{"pcm" => frame, "seq" => 0, "from" => "spoof"})
+    assert_reply ref, :ok
+    refute_broadcast "voice.audio", _
+    ref = push(socket, "voice.mute", %{"muted" => false})
+    assert_reply ref, :ok
     ref = push(socket, "voice.audio", %{"pcm" => frame, "seq" => 0, "from" => "spoof"})
     assert_reply ref, :ok
     assert_broadcast "voice.audio", %{from: ^peer_id, pcm: ^frame, seq: 0}
@@ -48,6 +53,8 @@ defmodule NobarSyncWeb.VoiceChannelTest do
     {:ok, _, socket} =
       subscribe_and_join(socket, "voice:#{room.id}", %{"transport" => "websocket-v2"})
 
+    ref = push(socket, "voice.mute", %{"muted" => false})
+    assert_reply ref, :ok
     ref = push(socket, "voice.audio", %{"pcm" => String.duplicate("!", 1708), "seq" => 0})
     assert_reply ref, :error, %{code: "invalid_audio"}
   end

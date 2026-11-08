@@ -6,6 +6,12 @@ export type VoicePeer = { id: string; name: string; muted: boolean; state: strin
 type Presence = Record<string, { metas: { display_name: string; muted: boolean }[] }>
 type Playback = { next: number; frames: number; sequence: number; sources: Set<AudioBufferSourceNode> }
 
+// Mean square of int16 samples. Quiet keepalive frames stay under the send gate.
+const SILENCE_POWER = 2500
+// Mu-law can nudge a quiet frame upward, so listener ducking starts above that gate.
+const SPEECH_POWER = SILENCE_POWER * 4
+const SPEECH_HANGOVER_MS = 400
+
 // Voice travels through the authenticated same-origin WebSocket. No direct peer
 // connection or external TURN endpoint is needed, including through HTTP ngrok.
 export class VoiceSession {
@@ -22,17 +28,21 @@ export class VoiceSession {
   private id = ""
   private closed = false
   private joined = false
-  private muted = false
+  private muted = true
+  private hearing = false
+  private talkGeneration = 0
   private volume = 0.8
   private sequence = 0
   private pending = 0
   private quietFrames = 0
   private statsTimer = 0
+  private speechTimer = 0
   private update: (peers: VoicePeer[]) => void
   private notice: (message: string) => void
   private ended: () => void
-  constructor(update: (peers: VoicePeer[]) => void, notice: (message: string) => void, ended: () => void) {
-    this.update = update; this.notice = notice; this.ended = ended
+  private speech: (active: boolean) => void
+  constructor(update: (peers: VoicePeer[]) => void, notice: (message: string) => void, ended: () => void, speech: (active: boolean) => void) {
+    this.update = update; this.notice = notice; this.ended = ended; this.speech = speech
   }
 
   async join(code: string, deviceId: string) {
@@ -47,6 +57,8 @@ export class VoiceSession {
     } })
     if (this.closed) { stream.getTracks().forEach(t => t.stop()); return }
     this.stream = stream
+    this.muted = true
+    stream.getAudioTracks().forEach(track => { track.enabled = false })
     stream.getAudioTracks()[0].onended = () => this.fail("Mikrofon terputus. Pilih perangkat dan gabung lagi.")
     this.output = context.createGain()
     this.output.gain.value = this.volume
@@ -78,6 +90,8 @@ export class VoiceSession {
       channel.join().receive("ok", payload => {
         this.id = String(payload.peer_id)
         this.joined = true
+        this.muted = true
+        this.channel?.push("voice.mute", { muted: true })
         this.publish()
         resolve()
       }).receive("error", error => reject(new Error(String(error.message || "Call ditolak."))))
@@ -103,7 +117,7 @@ export class VoiceSession {
     let energy = 0
     for (const sample of samples) energy += sample * sample
     // Silence suppression saves bandwidth; one quiet frame/second keeps playout live.
-    if (energy / samples.length < 2500) { if (++this.quietFrames < 12) return }
+    if (energy / samples.length < SILENCE_POWER) { if (++this.quietFrames < 12) return }
     this.quietFrames = 0
     // Mu-law companding halves transport bandwidth while preserving speech range.
     const bytes = new Uint8Array(samples.length)
@@ -132,15 +146,19 @@ export class VoiceSession {
     try { bytes = atob(pcm) } catch { return }
     if (bytes.length !== 1280) return
     peer.frames++
-    // Do not accumulate audio while the phone/browser suspends its audio device.
-    if (context.state !== "running") { this.dispose(peer); return }
     const buffer = context.createBuffer(1, 1280, 16000)
     const output = buffer.getChannelData(0)
+    let power = 0
     for (let i = 0; i < output.length; i++) {
       const value = ~bytes.charCodeAt(i) & 0xff
       const magnitude = (((value & 0x0f) << 3) + 0x84) << ((value & 0x70) >> 4)
-      output[i] = (value & 0x80 ? 0x84 - magnitude : magnitude - 0x84) / 32768
+      const sample = (value & 0x80 ? 0x84 - magnitude : magnitude - 0x84) / 32768
+      output[i] = sample
+      power += sample * sample
     }
+    // Do not accumulate audio while the phone/browser suspends its audio device.
+    if (context.state !== "running") { this.dispose(peer); return }
+    if (power / output.length >= SPEECH_POWER / (32768 * 32768)) this.markRemoteSpeech()
     // Bounded jitter buffer: discard backlog after a TCP/network stall.
     if (peer.next > context.currentTime + 0.45) this.dispose(peer)
     const source = context.createBufferSource()
@@ -161,19 +179,54 @@ export class VoiceSession {
       receivedFrames: this.peers.get(id)?.frames || 0,
     })))
   }
-  mute(muted: boolean) {
-    this.muted = muted
-    this.stream?.getAudioTracks().forEach(track => { track.enabled = !muted })
-    this.channel?.push("voice.mute", { muted })
+  transmit(open: boolean) {
+    if (this.closed || !this.joined) return
+    const generation = ++this.talkGeneration
+    if (!open) {
+      this.muted = true
+      this.armMic(false)
+      this.channel?.push("voice.mute", { muted: true })
+      return
+    }
+    this.channel?.push("voice.mute", { muted: false }).receive("ok", () => {
+      if (this.closed || generation !== this.talkGeneration) return
+      this.muted = false
+      this.armMic(true)
+    }).receive("error", () => this.transmitFailed(generation))
+      .receive("timeout", () => this.transmitFailed(generation))
   }
   setVolume(value: number) { this.volume = value; if (this.output) this.output.gain.value = value }
   resumeAudio() { void this.context?.resume().catch(() => this.notice("Browser masih memblokir audio call.")) }
+  private armMic(enabled: boolean) { this.stream?.getAudioTracks().forEach(track => { track.enabled = enabled }) }
+  private transmitFailed(generation: number) {
+    if (this.closed || generation !== this.talkGeneration) return
+    this.muted = true
+    this.armMic(false)
+    this.notice("Mikrofon belum terbuka. Tahan tombol bicara lagi.")
+  }
+  private markRemoteSpeech() {
+    if (this.closed) return
+    window.clearTimeout(this.speechTimer)
+    if (!this.hearing) { this.hearing = true; this.speech(true) }
+    this.speechTimer = window.setTimeout(() => {
+      this.hearing = false
+      if (!this.closed) this.speech(false)
+    }, SPEECH_HANGOVER_MS)
+  }
+  private silenceSpeech() {
+    window.clearTimeout(this.speechTimer)
+    if (!this.hearing) return
+    this.hearing = false
+    this.speech(false)
+  }
   private dispose(peer: Playback) { peer.sources.forEach(source => { source.onended = null; source.stop(); source.disconnect() }); peer.sources.clear(); peer.next = 0 }
   private fail(message: string) { if (!this.closed) { this.close(); this.notice(message); this.ended() } }
   close() {
     if (this.closed) return
     this.closed = true
     this.joined = false
+    this.talkGeneration++
+    this.silenceSpeech()
     window.clearInterval(this.statsTimer)
     if (this.capture) { this.capture.port.onmessage = null; this.capture.port.close(); this.capture.disconnect() }
     this.microphone?.disconnect(); this.silent?.disconnect()

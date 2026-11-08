@@ -45,6 +45,10 @@ function WatchSession({ code }: { code: string }) {
   const lastSignalRef = useRef<boolean | null>(null)
   const stallTimerRef = useRef(0)
   const queueDialogRef = useRef<HTMLDialogElement>(null)
+  const volumeRef = useRef(1)
+  const filmMutedRef = useRef(false)
+  const duckedRef = useRef(false)
+  const applyFilmRef = useRef<() => void>(() => {})
   const applyRef = useRef<(snapshot: Snapshot) => void>(() => {})
   const tickRef = useRef<() => void>(() => {})
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -87,6 +91,7 @@ function WatchSession({ code }: { code: string }) {
   const [processing, setProcessing] = useState<{ status: string; progress: number; error?: string } | null>(null)
   const [roomTitle, setRoomTitle] = useState("Ruang nonton")
   const [chatPermission, setChatPermission] = useState("everyone")
+  const [playerNode, setPlayerNode] = useState<HTMLDivElement | null>(null)
   const canControl = role === "host" || role === "moderator"
   const active = snapshot?.pending && (clockRef.current !== null && performance.now() + clockRef.current >= snapshot.effective_at_ms) ? snapshot.pending : snapshot?.state
   const playing = active?.status === "playing"
@@ -299,7 +304,7 @@ function WatchSession({ code }: { code: string }) {
       const node = document.createElement("div")
       ytNodeRef.current.replaceChildren(node)
       ytRef.current = new window.YT.Player(node, { videoId: id, playerVars: { controls: 0, disablekb: 1, playsinline: 1, rel: 0 }, events: {
-        onReady: () => { bufferingRef.current = false; setLoading(false); tickRef.current() },
+        onReady: () => { bufferingRef.current = false; setLoading(false); applyFilmRef.current(); tickRef.current() },
         onStateChange: (event: { data: number }) => {
           bufferingRef.current = event.data === 3
           setLoading(event.data === 3)
@@ -447,11 +452,28 @@ function WatchSession({ code }: { code: string }) {
     if (!push) { reset(); return }
     push.receive("ok", (data) => { applyRef.current(data as unknown as Snapshot); setStatus("Pemutaran dijadwalkan bersama"); reset() }).receive("error", reset).receive("timeout", reset)
   }
+  function applyFilmOutput() {
+    const silent = filmMutedRef.current || duckedRef.current
+    const level = silent ? 0 : volumeRef.current
+    const video = videoRef.current
+    if (video) { video.volume = level; video.muted = silent }
+    const yt = ytRef.current
+    if (!yt) return
+    try {
+      yt.setVolume(Math.round(level * 100))
+      if (silent) yt.mute(); else yt.unMute()
+    } catch { /* The official player rejects calls before its ready event. */ }
+  }
+  applyFilmRef.current = applyFilmOutput
+  function onSpeechDuck(active: boolean) {
+    duckedRef.current = active
+    applyFilmOutput()
+  }
   function changeVolume(value: number, mute = value === 0) {
+    volumeRef.current = value
+    filmMutedRef.current = mute
     setVolume(value); setMuted(mute)
-    if (videoRef.current) { videoRef.current.volume = value; videoRef.current.muted = mute }
-    ytRef.current?.setVolume(value * 100)
-    if (mute) ytRef.current?.mute(); else ytRef.current?.unMute()
+    applyFilmOutput()
   }
   async function resync() {
     try {
@@ -534,7 +556,7 @@ function WatchSession({ code }: { code: string }) {
       <header className="watch-header"><Link className="brand" to="/dashboard">NOBAR<span>SYNC</span><small>WATCH TOGETHER</small></Link><div className="flex items-center gap-3"><Badge tone={connected ? "green" : "amber"}>{connected ? "● LIVE ROOM" : "Menghubungkan"}</Badge><Link to={`/rooms/${code}`} className="text-sm text-mist">Kelola ruang ↗</Link></div></header>
       <div className={`watch-grid ${!chatOpen ? "chat-collapsed" : ""}`}>
         <section className="min-w-0">
-          <div ref={frameRef} className="cinema-player">
+          <div ref={(node) => { frameRef.current = node; setPlayerNode((current) => current === node ? current : node) }} className="cinema-player">
             <video ref={videoRef} className={isYoutube ? "hidden" : "aspect-video w-full"} playsInline crossOrigin="use-credentials" preload="auto" poster={playback?.poster_key ? `/media/t/${playback.token}/${playback.poster_key}` : undefined}
               onWaiting={reportWaiting} onSeeking={() => setLoading(true)} onCanPlay={() => { setLoading(false); signal(false); tickRef.current() }} onPlaying={() => { setLoading(false); setBlocked(false); signal(false) }} onEnded={() => { if (canControl) command("playback.pause", { position_ms: Math.round(duration) }) }}>
               {playback?.subtitles?.map((sub) => <track key={sub.language} kind="subtitles" srcLang={sub.language} label={sub.label} src={`/media/t/${playback.token}/${sub.vtt_key}`} />)}
@@ -576,7 +598,7 @@ function WatchSession({ code }: { code: string }) {
             {people.map((person) => { const metric = metrics?.members.find((item) => item.member_id === person.id); const stale = !metric || Date.now() - metric.updated_at_ms > 8000; const lag = metric?.lag_ms || 0; return <article key={person.id} className="audience-card"><div className={`avatar ${person.role === "host" ? "host-avatar" : ""}`}>{person.display_name.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><strong className="block truncate">{person.display_name}{person.id === memberRef.current ? " (kamu)" : ""}</strong><small>{person.role === "host" ? "♛ Host" : person.role === "moderator" ? "Moderator" : "Penonton"}{readiness[person.id] ? " · ✓ Siap" : ""}</small><div className="mt-2"><Badge tone={stale || metric?.buffering ? "amber" : Math.abs(lag) > 1500 ? "red" : "green"}>{stale ? "Menunggu status" : metric?.buffering ? "Buffering" : Math.abs(lag) <= 500 ? "Tersinkron" : `${lag > 0 ? "Lebih cepat" : "Tertinggal"} ${lagLabel(lag)}`}</Badge></div></div>{role === "host" && person.role !== "host" ? <details className="member-menu"><summary aria-label={`Kelola ${person.display_name}`}>•••</summary><button onClick={() => void action("transfer-host", { member_id: person.id })}>Jadikan host</button><button onClick={() => void action("kick", { member_id: person.id })}>Keluarkan</button></details> : null}</article> })}
             {!people.length ? <p className="text-sm text-mist">Menghubungkan peserta…</p> : null}
           </div></section>
-          <VoiceCall code={code} roomConnected={connected} />
+          <VoiceCall code={code} roomConnected={connected} dock={playerNode} onSpeechDuck={onSpeechDuck} />
           <section className="audience-panel"><div className="section-title"><div><p className="eyebrow">UP NEXT</p><h2>Antrean malam ini <span>{playlist.length} film</span></h2><p className="mt-2 text-xs text-mist">Satu film aktif, banyak film dalam antrean. Menambah antrean tidak mengganti film yang sedang ditonton.</p></div>{canControl ? <Button onClick={() => setQueueOpen(true)}>＋ Tambah film</Button> : null}</div>{playlist.length ? playlist.map((item, index) => <div className="queue-row" key={item.id}><span className="queue-number">{String(index + 1).padStart(2, "0")}</span><strong>{item.media?.title || "Film dihapus"}</strong><button className="secondary-button" onClick={() => void action(`playlist/${item.id}/vote`, {}).then(() => loadPlaylist())}>♡ {item.votes}</button>{canControl && item.media?.status === "ready" ? <button className="secondary-button" disabled={queueBusy || !connected} onClick={() => void selectQueuedFilm(item.media!.id)}>Pilih film ini</button> : null}{canControl ? <button className="secondary-button" disabled={queueBusy} onClick={() => void removeQueuedFilm(item.id)}>Hapus antrean</button> : null}</div>) : <p className="text-sm text-mist">Belum ada antrean. Host dapat menambahkan film melalui tombol Tambah film.</p>}</section>
         </section>
         {chatOpen ? <aside className="chat-panel"><div className="chat-heading"><div><span className="eyebrow">LIVE CONVERSATION</span><h2>Obrolan ruang</h2></div><span className="live-dot" /></div><div className="chat-messages" role="log" aria-label="Pesan ruang" aria-live="polite">{!chat.length ? <div className="chat-empty"><span>✦</span><h3>Film lebih seru bersama.</h3><p>Sapa temanmu, bahas adegan favorit, dan nikmati malamnya.</p></div> : chat.map((item) => <div className="chat-bubble" key={item.id}><strong>{item.display_name}</strong><p>{item.body}</p></div>)}<div ref={chatEndRef} /></div><div className="emoji-row">{["❤️", "😂", "🔥", "😮", "👏"].map((emoji) => <button key={emoji} aria-label={`Reaksi ${emoji}`} onClick={() => command("reaction.send", { emoji })}>{emoji}</button>)}</div><form className="chat-form" onSubmit={(event) => { event.preventDefault(); if (!draft.trim() || sending || !canChat) return; setSending(true); command("chat.send", { body: draft.trim() })?.receive("ok", () => { setDraft(""); setSending(false) }).receive("error", () => setSending(false)).receive("timeout", () => setSending(false)) }}><input aria-label="Pesan chat" maxLength={500} disabled={!connected || !canChat} placeholder={canChat ? "Tulis pesan…" : "Chat dibatasi host"} value={draft} onChange={(event) => setDraft(event.target.value)} /><button disabled={!connected || !canChat || !draft.trim() || sending} aria-label="Kirim pesan">↑</button></form><p className="chat-footnote">Satu film. Satu momen. Bersama.</p></aside> : null}

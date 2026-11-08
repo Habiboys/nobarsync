@@ -1,5 +1,11 @@
 import { test, expect, type Page } from "@playwright/test"
 
+async function holdTalk(page: Page, down: boolean) {
+  await page.getByRole("button", { name: "Tahan untuk bicara" }).evaluate((el, down) => {
+    el.dispatchEvent(new PointerEvent(down ? "pointerdown" : "pointerup", { bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, pointerType: "mouse" }))
+  }, down)
+}
+
 async function post(page: Page, path: string, body: object) {
   return page.evaluate(async ({ path, body }) => {
     const csrf = document.cookie.match(/(?:^|; )nobarsync_csrf=([^;]+)/)?.[1] || ""
@@ -48,20 +54,30 @@ test("WebSocket-only call plays nonzero audio both ways, mute, volume, rejoin an
     for (const page of pages) {
       await page.goto(`/watch/${code}`)
       await page.getByRole("button", { name: "Gabung call", exact: true }).click()
-      await expect(page.getByRole("button", { name: "Bisukan mikrofon" })).toBeVisible({ timeout: 20000 }).catch(async error => { console.log(await page.locator(".voice-panel").innerText()); throw error })
+      await expect(page.getByRole("button", { name: "Tahan untuk bicara" })).toBeVisible({ timeout: 20000 }).catch(async error => { console.log(await page.locator(".voice-panel").innerText()); throw error })
+      await expect.poll(() => page.evaluate(() => {
+        const streams = (window as unknown as { __streams: MediaStream[] }).__streams
+        return streams[streams.length - 1]?.getAudioTracks()[0]?.enabled ?? true
+      })).toBe(false)
     }
     for (const page of pages) {
       await expect(page.locator('.voice-person[data-state="connected"]')).toHaveCount(2, { timeout: 30000 })
+      await expect(page.locator(".voice-person").filter({ hasNotText: "(Anda)" })).toContainText("🔇")
+    }
+    for (const page of pages) await holdTalk(page, true)
+    for (const page of pages) {
       await expect.poll(() => page.evaluate(() => (window as unknown as { __audioMetrics: {nonzeroOutput: number} }).__audioMetrics.nonzeroOutput)).toBeGreaterThan(1000)
       await expect.poll(async () => Number(await page.locator(".voice-person").filter({hasNotText:"(Anda)"}).getAttribute("data-received-frames"))).toBeGreaterThan(1)
     }
-    await host.getByRole("button", { name: "Bisukan mikrofon" }).click()
-    await expect(guest.locator(".voice-person").filter({ hasText: "Call E2E 0" })).toContainText("🔇")
-    expect(await host.evaluate(() => (window as unknown as { __streams: MediaStream[] }).__streams[0].getAudioTracks()[0].enabled)).toBe(false)
-    const filmVolume = await host.locator("video").evaluate((v: HTMLVideoElement) => v.volume)
+    await expect.poll(() => host.locator("video").evaluate((v: HTMLVideoElement) => v.volume)).toBe(0)
+    expect(Number(await host.getByLabel("Volume", { exact: true }).inputValue())).toBe(1)
     await host.getByLabel("Volume call", { exact: true }).fill("25")
     expect(await host.evaluate(() => (window as unknown as { __gains: GainNode[] }).__gains.some(g => g.gain.value === 0.25))).toBe(true)
-    expect(await host.locator("video").evaluate((v: HTMLVideoElement) => v.volume)).toBe(filmVolume)
+    expect(await host.locator("video").evaluate((v: HTMLVideoElement) => v.volume)).toBe(0)
+    for (const page of pages) await holdTalk(page, false)
+    expect(await host.evaluate(() => (window as unknown as { __streams: MediaStream[] }).__streams[0].getAudioTracks()[0].enabled)).toBe(false)
+    await expect.poll(() => host.locator("video").evaluate((v: HTMLVideoElement) => v.volume)).toBe(1)
+    await expect(guest.locator(".voice-person").filter({ hasText: "Call E2E 0" })).toContainText("🔇")
     await host.getByRole("button", { name: "Keluar call" }).click()
     await expect(guest.locator(".voice-person")).toHaveCount(1)
     expect(await host.evaluate(() => (window as unknown as { __contexts: AudioContext[] }).__contexts.every(c => c.state === "closed"))).toBe(true)

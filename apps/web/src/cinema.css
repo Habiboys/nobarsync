@@ -112,6 +112,11 @@ button, a { touch-action: manipulation; }
 @media (max-width: 540px) { .app-shell { padding-inline: 16px; } .watch-page { padding-inline: 10px; } .watch-header { gap: 10px; } .watch-header > div { flex-direction: column; gap: 6px; align-items: end; } .watch-title { align-items: start; } .watch-title > button { font-size: 9px; padding: 7px; } .audience-panel { padding: 17px; } .section-title { flex-wrap: wrap; } .control-row { gap: 6px; } .player-controls { padding: 34px 10px 8px; } .volume-slider { width: 45px; } .control-row select { max-width: 88px; } .player-time { font-size: 10px; } .cinema-hero { padding: 32px 25px; } .stat-strip { gap: 8px; } .stat-strip article { padding: 15px 12px; } .stat-strip strong { font-size: 22px; } }
 @media (prefers-reduced-motion: reduce) { *, *:before, *:after { animation: none !important; scroll-behavior: auto !important; transition: none !important; } }
 
+.talk-button { position: absolute; z-index: 6; right: 16px; bottom: 108px; width: 64px; height: 64px; border-radius: 999px; border: 1px solid #ffffff30; background: #14141acc; color: #fff; font-size: 11px; letter-spacing: .4px; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.talk-button[aria-pressed="true"] { background: #ed2439; border-color: #ed2439; }
+.talk-button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.cinema-player:fullscreen .talk-button { bottom: 120px; }
+@media (max-width: 540px) { .talk-button { width: 56px; height: 56px; right: 10px; bottom: 92px; font-size: 10px; } }
 .voice-panel select { background: #18181c; color: #f5f5f7; border: 1px solid #3a3a43; border-radius: 8px; padding: 8px; max-width: 240px; margin-left: 8px; }
 .voice-person { background: #151c1b; border: 1px solid #274a40; border-radius: 999px; padding: 7px 12px; font-size: 12px; }
 .voice-person[data-state="failed"], .voice-person[data-state="disconnected"] { border-color: #b85151; }

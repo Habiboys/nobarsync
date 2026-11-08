@@ -13,7 +13,7 @@ defmodule NobarSyncWeb.VoiceChannel do
           room_id: uuid,
           member_id: member.id,
           peer_id: Ecto.UUID.generate(),
-          muted: false,
+          muted: true,
           last_audio_seq: -1
         )
 
@@ -25,7 +25,7 @@ defmodule NobarSyncWeb.VoiceChannel do
             Presence.track(socket, socket.assigns.peer_id, %{
               display_name: member.display_name,
               member_id: member.id,
-              muted: false
+              muted: true
             })
           end
         end)
