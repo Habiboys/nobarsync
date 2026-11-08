@@ -1,0 +1,34 @@
+# Elixir
+apps/api/_build/
+apps/api/deps/
+apps/api/cover/
+apps/api/tmp/
+apps/api/.elixir_ls/
+apps/api/erl_crash.dump
+
+# Node
+node_modules/
+apps/web/dist/
+apps/web/node_modules/
+infra/cloudflare/media-worker/node_modules/
+infra/cloudflare/media-worker/.wrangler/
+infra/cloudflare/media-worker/dist/
+test-results/
+playwright-report/
+blob-report/
+
+# Env and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.cursor/
+
+# Generated local media
+tests/fixtures/generated/
+tmp/

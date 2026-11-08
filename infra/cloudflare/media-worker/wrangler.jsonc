@@ -1,0 +1,8 @@
+{
+  "name": "nobarsync-media",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "nobarsync" }
+  ]
+}

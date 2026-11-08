@@ -1,0 +1,334 @@
+Kamu adalah Principal Software Engineer, Realtime Systems Engineer, Video Streaming Engineer, DevOps Engineer, QA Automation Engineer, dan Product Designer.
+
+TUGAS: Bangun NobarSync 2.0, aplikasi web nonton bareng realtime lengkap, benar-benar fungsional, terintegrasi end-to-end dan siap di-deploy. Jangan berhenti pada plan, mockup, pseudocode, skeleton, atau fitur yang hanya terlihat bekerja. Implementasikan kode, jalankan, tes, dan perbaiki error. Jika sedang bekerja pada repository lama, audit lebih dahulu dan migrasikan bagian yang bermanfaat tanpa merusak data.
+
+TUJUAN PRODUK
+Pengguna dapat membuat room, mengunggah video yang memiliki hak distribusi, memilih film, mengundang penonton, lalu menontonnya bersama. Semua perangkat menerima video dari media CDN/storage, tetapi playback dikendalikan satu server authoritative timeline. Play, pause, seek, switch movie, late join, buffering, refresh, dan reconnect harus otomatis ditangani tanpa sinkronisasi manual.
+
+TEKNOLOGI WAJIB
+- Backend: Elixir, Phoenix, Ecto, PostgreSQL.
+- Realtime: Phoenix Channels, PubSub, Presence.
+- Room coordinator: OTP GenServer, DynamicSupervisor, Registry.
+- Background processing: Oban dan worker FFmpeg/FFprobe terpisah dari HTTP request process.
+- Frontend: React, TypeScript, Vite, Tailwind, TanStack Query, Zustand bila diperlukan.
+- Video player: hls.js dengan fallback native HLS dan HTMLMediaElement.
+- Media storage: Cloudflare R2, API S3-compatible.
+- Cloudflare Worker TypeScript untuk authenticated media delivery dari private R2.
+- Local object storage: MinIO untuk pengujian tanpa akun cloud.
+- Docker Compose, Caddy atau reverse proxy TLS, Playwright, ExUnit, Vitest.
+- Gunakan versi stabil yang kompatibel setelah memeriksa dokumentasi resmi. Jangan mengunci versi secara sembarangan.
+
+BATASAN ARSITEKTUR
+1. Jangan membuat VPS menjadi perantara semua data video penonton.
+2. Jangan mengunduh seluruh film ke filesystem aplikasi secara permanen.
+3. Browser melakukan direct-to-object-storage upload yang resumable.
+4. FFmpeg boleh menggunakan scratch storage sementara khusus worker, lalu wajib dibersihkan.
+5. Jangan menjalankan FFmpeg di dalam proses WebSocket atau request Phoenix.
+6. Jangan menggunakan Redis, Kubernetes, atau microservice tambahan tanpa kebutuhan teknis yang jelas.
+7. Pisahkan media provider dengan interface, minimal R2HlsProvider. Siapkan interface CloudflareStreamProvider tanpa mengklaim fitur berfungsi bila belum terimplementasi.
+8. Jangan memakai yt-dlp untuk mengunduh video YouTube tanpa izin. Dukung video YouTube menggunakan official IFrame Player API dengan keterbatasan sinkronisasinya dijelaskan.
+9. Jangan mengimplementasikan bypass DRM, pembatasan platform, atau akses konten tanpa izin.
+10. Semua fitur utama harus memiliki pengujian nyata.
+
+STRUKTUR REPOSITORY
+nobarsync/
+  apps/
+    api/                    # Phoenix backend, channels, coordinator, Oban
+    web/                    # React + TypeScript frontend
+  infra/
+    cloudflare/
+      media-worker/         # Worker dengan private R2 binding
+    docker/
+    caddy/
+    scripts/
+  tests/
+    e2e/
+    load/
+    fixtures/
+  docs/
+  docker-compose.yml
+  docker-compose.prod.yml
+  .env.example
+  README.md
+
+BACKEND FOUNDATION
+- Implementasikan login, register, logout, me endpoint, password hashing, session management, guest identities.
+- Gunakan secure HTTP-only cookie sessions untuk browser, proteksi CSRF sesuai kebutuhan dan autentikasi Channels dengan token pendek.
+- RBAC global admin dan role per room: host, moderator, viewer.
+- Validasi input, consistent API errors, authorization policy, rate limiting, audit logging.
+- Semua database schema menggunakan Ecto migrations, constraints, indexing, dan seeding.
+- Tambahkan health checks, structured logs, dan telemetry.
+
+DATABASE
+Buat schema yang sesuai untuk users, sessions, guest identities, media assets, media variants, subtitles, upload sessions, rooms, room members, invitations, room playback snapshots, playback events, room messages, room reactions, dan audit logs.
+Simpan UUID, timestamps, foreign keys dan unique constraints secara konsisten.
+Pastikan operasi state playback memiliki revision monotonik dan pemulihan snapshot saat backend restart.
+
+MEDIA MANAGEMENT
+- Library video dengan search, filter, pagination, metadata, poster, duration, status, dan actions.
+- Direct upload R2 menggunakan signed requests serta multipart upload untuk file besar.
+- CORS R2, abort/resume upload, upload progress, completion validation, timeout, checksum atau validasi integritas sesuai dukungan API.
+- Local development harus bekerja menggunakan MinIO.
+- Verifikasi kepemilikan object, ukuran, tipe, dan hasil FFprobe.
+- Setelah upload sukses, masukkan encoding job ke Oban.
+- Job state: queued, probing, processing, uploading, ready, failed, cancelled.
+- Retry dengan backoff dan idempotency; jangan menghasilkan varian ganda.
+- FFmpeg menghasilkan HLS VOD multi-bitrate dengan profil maksimum 480p, 720p, 1080p sesuai resolusi sumber, H.264, AAC, segment sekitar 4 detik, GOP/keyframe alignment.
+- Hasilkan master playlist, variant playlists, thumbnail, WebVTT subtitles, metadata.
+- Semua asset diunggah ke private R2; gunakan temporary work directory dengan cleanup saat sukses/gagal/cancel.
+- Batasi concurrent encodes, CPU, RAM, temporary storage, dan execution time.
+- Tambahkan status dan progress encoding ke frontend melalui realtime events.
+- Implementasikan deletion lifecycle beserta cleanup objects.
+
+MEDIA SOURCE ADAPTERS
+1. LocalUploadProvider: file browser menuju R2.
+2. ExistingR2Provider: memilih media yang telah siap.
+3. DirectURLImportProvider: hanya sumber tepercaya/diizinkan, URL validation, redirect validation, content limit, SSRF protection.
+4. YouTubeEmbedProvider: official IFrame API, playback event adapter, bukan download/rehost.
+5. MediaProvider interface untuk provider lain di masa depan.
+6. Google Drive import boleh diimplementasikan dengan OAuth resmi untuk file yang pengguna boleh akses, bukan scraping link share publik atau bypass quota. Jika credentials belum tersedia, integrasi harus terisolasi dan disabled dengan pesan jelas.
+
+ROOM MANAGEMENT
+- Create room dengan unique code dan shareable invite link.
+- Public/private/password room, optional expiration, maximum viewers, host-only/everyone control.
+- Join as authenticated user atau guest dengan nama.
+- Waiting room, ready check, participant list, online status, host badge, chat permissions.
+- Host transfer saat host keluar, sesuai room policy.
+- Manage playlist, select movie, next movie, room lock, kick participant.
+- Presence memakai Phoenix Presence, handle multiple tabs, disconnect, reconnect, heartbeat, presence diff.
+- Auto-close atau TTL room kosong yang configurable.
+- Jangan menganggap HTTP session sama dengan presence: buat join/leave semantics yang jelas.
+
+AUTHORITATIVE SYNC ENGINE
+Setiap room aktif memiliki authoritative RoomCoordinator berbasis OTP. Coordinator memegang:
+room_id, media_id, revision, status, anchor_position_ms, anchor_server_time_ms, playback_rate, effective_at_ms, pending_transition, duration_ms, control_mode, updated_at.
+Semua posisi dibatasi antara 0 dan durasi media.
+Rumus playing: position = clamp(anchor_position + elapsed_server_time * rate, 0, duration).
+Paused berarti posisi dibekukan. Gunakan waktu UTC untuk serialisasi lintas perangkat dan monotonic clock untuk mengukur interval secara stabil.
+Untuk operasi yang dijadwalkan di masa depan, state lama tetap berlaku sampai effective_at, lalu transition menjadi aktif.
+Bangun queue/supersession policy yang deterministik agar command cepat berturut-turut tidak saling menimpa secara salah.
+Coordinator wajib memvalidasi role, media readiness, session membership, dan command idempotency.
+Gunakan revision monotonik, request_id, acknowledgments, snapshot dan recovery.
+Persist state penting ke PostgreSQL termasuk posisi dan anchor wall clock; definisikan perilaku saat restart atau room tanpa peserta.
+Untuk MVP gunakan satu Phoenix node; desain locking/ownership supaya tidak ada dua coordinator aktif untuk satu room saat nantinya multi-node.
+
+CLOCK SYNCHRONIZATION
+Client melakukan sejumlah ping dengan client send time, server response time, client receive time.
+Estimasi RTT dan server clock offset menggunakan midpoint dan pilih sample RTT terbaik.
+Refresh berkala, gunakan performance.now() untuk interval, pertimbangkan browser tab suspension dan system clock adjustment.
+Tidak boleh memakai Date.now() mentah dari browser sebagai satu-satunya sumber kebenaran.
+Server authoritative time harus dapat dipetakan ke client timeline secara konsisten.
+
+SCHEDULED PLAYBACK
+- Client hanya mengirim intent play, pause, seek, change media.
+- Server menghitung state baru, effective_at masa depan, revision, kemudian broadcast.
+- Lead time awal configurable, misalnya 1200 ms, dengan adaptasi terhadap RTT dan batas maksimum.
+- Client yang menerima command sebelum T menyiapkan playback dan menjalankannya pada T.
+- Client yang menerima sesudah T menghitung current authoritative position dan catch up.
+- Jika command datang out of order, abaikan revision lebih lama.
+- Tangani play() promise rejection, autoplay blocked, media not ready, stalled, interrupted seek, dan rejoin.
+- Sediakan overlay Activate Player sebelum sesi film untuk mematuhi browser autoplay rules.
+
+DRIFT CORRECTION
+Implementasikan stateful drift correction controller.
+Target_position berasal dari authoritative timeline.
+Drift = actual_media_time - target_position.
+Parameter awal:
+- abs(drift) <= 200 ms: no adjustment.
+- 200 sampai 1500 ms: soft correction menggunakan playbackRate secara terbatas, contoh 0.97 sampai 1.05.
+- di atas 1500 ms: hard seek jika buffer dan readiness memungkinkan.
+- Tambahkan smoothing, hysteresis, cooldown, dan batas frekuensi seek.
+- Reset correction pada pause, seek manual oleh host, media replacement, ended, dan buffering.
+- Jangan mengejar dengan playbackRate ketika buffer tidak cukup.
+- Setelah reconnect, minta snapshot terbaru, abaikan state lama, seek ke canonical position dan resume jika diizinkan.
+- Jangan mengklaim frame-perfect sync yang mustahil dijamin pada seluruh browser.
+- Exposure metrics untuk drift p50/p95/p99, correction count, buffer count.
+
+BUFFERING MODES
+Implementasikan:
+1. independent: peserta buffering recover sendiri tanpa menahan yang lain.
+2. pause_all: coordinator menjadwalkan pause setelah kondisi buffering mencapai threshold, dengan grace period dan minimum affected participants.
+3. host_decides: host melihat alert dan dapat memutuskan.
+Ready/buffering event harus memakai debounce agar koneksi flapping tidak menyebabkan pause/play berulang.
+Jika sistem melakukan auto-resume, pastikan seluruh peserta memenuhi readiness policy atau timeout yang masuk akal.
+
+REALTIME PROTOCOL
+Gunakan Phoenix Channel topic room:<room_id> dengan phx_join yang mengembalikan snapshot.
+Implement events:
+clock.ping
+playback.play
+playback.pause
+playback.seek
+playback.state
+playback.snapshot
+playback.heartbeat
+player.ready
+player.buffering
+room.presence
+room.media_changed
+room.settings_changed
+chat.send
+chat.message
+reaction.send
+reaction.broadcast
+room.host_changed
+room.error
+Definisikan payload JSON, schema validation, error codes, authorization, throttling, request_id, version, dan sequence handling.
+Dokumentasikan seluruh protocol dengan contoh payload dan lifecycle diagram.
+
+PLAYER
+- Implement reusable MediaPlayer abstraction untuk HLS/native video dan YouTube embed adapter.
+- HLS adaptive bitrate, quality selection auto/manual, subtitles, audio, fullscreen, volume, playback status, loading, error retry, poster.
+- Video element media events harus terintegrasi dengan sync controller tanpa infinite feedback loops.
+- Viewer tidak boleh mengubah global position saat menggeser local seek bar tanpa izin.
+- Untuk host, tampilkan shared seek controls; untuk viewer, tampilkan read-only atau preview-only controls.
+- Media segment loading menggunakan edge media URL yang otorisasinya benar.
+- Video player harus bekerja di Chrome, Firefox, Safari dan mobile browsers sesuai dukungan codec.
+- Dukung keyboard shortcuts dan accessible controls.
+
+PRIVATE MEDIA DELIVERY
+- Private R2 bucket, no public r2.dev route.
+- Worker menggunakan R2 binding untuk mengambil objek.
+- Backend menerbitkan short-lived signed playback tokens dengan media_id, room_id, expiry dan scope.
+- Worker memvalidasi signature, expiry, media scope dan request path sebelum cache lookup.
+- Protected master playlist, variant playlist, video segments, subtitle dan thumbnails sesuai policy.
+- Token renewal sebelum expired, recovery jika token expired selama playback.
+- Edge caching harus bisa berbagi cache media antar pengguna terotorisasi tanpa membocorkan asset private.
+- Validasi token tidak boleh membutuhkan backend network request untuk setiap segment.
+- Support correct MIME types, HEAD/GET, Range bila diperlukan, caching semantics, CORS, 403/404/416 behaviors.
+- Jangan menyatakan R2 S3 presigned GET URL dapat bekerja langsung pada custom CDN domain.
+- Buat local authenticated media gateway untuk MinIO yang meniru kontrak production Worker agar test E2E dapat berjalan tanpa cloud account.
+
+FRONTEND PRODUCT & DESIGN
+Buat UI premium dark cinematic, modern, responsive, intuitif dan konsisten.
+Halaman:
+Landing, Login, Register, Dashboard, Media Library, Upload Studio, Create Room, Join Room, Waiting Room, Watch Room, Profile, Admin.
+Watch Room layout:
+- Video player sebagai elemen utama
+- Film title dan progress
+- Sidebar chat collapsible
+- Avatar peserta dan participant list
+- Host controls
+- Invite/share
+- Sync status indicator
+- Buffering indicator
+- Ready state
+- Subtitle dan quality settings
+- Mobile responsive theater view
+Gunakan skeleton/loading/empty/error states yang benar, toast notifications, optimistic UI hanya jika aman, accessible focus, keyboard navigation, dan error boundaries.
+Aplikasi harus terasa sebagai produk nyata, bukan kumpulan halaman CRUD.
+
+SOCIAL FEATURES
+- Chat realtime disimpan di Postgres, pagination history, rate limit, sanitasi konten.
+- Emoji reactions realtime dengan throttling.
+- Ready check.
+- Host-controlled countdown.
+- Playlist dan vote next movie.
+- Host transfer.
+- Jangan menambahkan voice chat setengah matang; jika dilanjutkan di versi berikutnya gunakan adapter LiveKit/WebRTC terpisah.
+
+API & SCHEMA
+Implementasikan endpoint terstruktur di /api/v1 untuk auth, media, upload, rooms, invitations, membership, room settings, playlist, dan playback access token.
+Tentukan kontrak request-response typed dengan OpenAPI atau dokumentasi ekuivalen.
+Endpoint harus memiliki integration tests untuk happy path, invalid data, unauthorized dan forbidden scenarios.
+Tidak boleh ada endpoint privileged yang hanya dilindungi dengan menyembunyikan tombol frontend.
+
+LOCAL DEVELOPMENT
+Docker Compose minimal menyediakan:
+postgres, minio, api, worker, web, dan reverse proxy/gateway yang relevan.
+Buat bucket lokal otomatis, seed sample account dan royalty-free/test-owned media fixture pendek.
+Pastikan aplikasi bisa berjalan tanpa Cloudflare credentials dalam mode local.
+Semua environment vars di .env.example dengan nama, deskripsi, contoh nilai non-rahasia.
+Jangan memasukkan API key asli ke git.
+Tulis satu prosedur setup lokal yang dapat direproduksi dari checkout repository kosong sampai dua browser bisa menonton bareng.
+
+PRODUCTION DEPLOYMENT
+- Dockerfile multi-stage untuk frontend dan Phoenix release.
+- Separate API dan worker process.
+- PostgreSQL migrations dengan mekanisme aman.
+- Production env validation.
+- Caddy/NGINX TLS termination, reverse proxy WebSocket.
+- Healthchecks, restart policies, resource limits, logging, graceful shutdown.
+- Cloudflare Worker dengan wrangler config, R2 binding, deployment guide dan secrets management.
+- Database backup/restore instructions dan worker recovery.
+- CI GitHub Actions untuk lint, formatter, tests, build, security checks.
+- Deployment melalui Docker Compose dengan image versions yang jelas, tidak bergantung pada development Vite server.
+
+TESTING
+Unit tests:
+Timeline formula, pause/resume, seek, clipping position, revision ordering, schedule transition, clock offset estimator, drift correction hysteresis, buffering policy.
+
+Backend integration:
+Authentication, permission controls, channel join, presence, room coordinator lifecycle, host transfer, snapshots, reconnect, concurrent commands, database recovery.
+
+Media integration:
+Upload validation, multipart resumability, worker retry, FFmpeg fixture, manifest correctness, subtitle conversion, R2/MinIO object checks, token expiry, unauthorized segment access.
+
+Playwright E2E:
+1. Host login lalu create room.
+2. Guest A dan B join menggunakan browser contexts berbeda.
+3. Host memilih video.
+4. Host start, semua player mengikuti timeline.
+5. Host pause, semua player pause.
+6. Host seek, semua menuju target.
+7. Penonton ketiga late join, otomatis catch up.
+8. Simulasikan latency, packet loss terbatas dan koneksi terputus.
+9. Refresh satu browser dan pastikan reconnect/recovery.
+10. Simulasikan buffering dan tiga mode buffering.
+11. Coba non-host mengirim command yang tidak berizin.
+12. Uji private media URL tanpa token, token expired dan renewal.
+13. Uji responsive/mobile dan error states.
+
+PERFORMANCE
+Buat load test WebSocket menggunakan tool yang sesuai, dengan jumlah klien configurable.
+Uji setidaknya 20, 100, dan 500 simulated connections bila resources lingkungan memungkinkan.
+Ukurlah active channels, broadcast latency, reconnect rate, CPU/RAM, DB query time dan sync command throughput.
+Untuk pengukuran playback drift yang sah, gunakan real browser video playback dengan injected network conditions; jangan melaporkan simulasi event WebSocket sebagai bukti sinkronisasi media nyata.
+Target awal p95 playback drift <= 500ms di kondisi jaringan terkendali, setelah warmup, dilaporkan sebagai hasil pengujian bukan jaminan absolut.
+Catat hardware, sample size, kondisi jaringan dan keterbatasan pengujian.
+
+OBSERVABILITY
+Structured logs dengan request/room ids, error monitoring, Phoenix Telemetry, encoding duration, pending jobs, queue failures, room count, connected users, player error, HLS segment failure, drift p50/p95, buffering ratio.
+Health endpoints untuk liveness/readiness.
+Jangan mengekspos credential, session token atau signed video token pada log.
+
+DOKUMENTASI
+README.md harus berisi tujuan, arsitektur, prerequisites, installation, commands, env vars, credentials setup, development dan production deployment, common troubleshooting.
+docs/architecture.md berisi komponen dan sequence diagram.
+docs/realtime-protocol.md berisi semua channel events dan payloads.
+docs/media-pipeline.md berisi upload, encoding, R2 dan Worker.
+docs/database.md berisi schema dan relasi.
+docs/testing.md berisi test matrix dan cara menjalankannya.
+docs/security.md berisi access model dan threat mitigations.
+docs/deployment.md berisi langkah deploy VPS dan Cloudflare.
+docs/limitations.md berisi keterbatasan browser, source platform dan sync precision.
+
+CARA BEKERJA
+1. Audit repository dan environment sebelum membuat perubahan.
+2. Buat task list internal berdasarkan dependency.
+3. Implementasikan fondasi.
+4. Setelah fondasi berjalan, implementasikan room realtime dan sync engine menggunakan video fixture.
+5. Baru implementasikan media pipeline serta private delivery.
+6. Integrasikan frontend dan backend.
+7. Lengkapi fitur produk, tes, security, deployment.
+8. Jalankan formatter, lint, typecheck, unit tests, integration tests, E2E tests dan build.
+9. Perbaiki masalah berdasarkan hasil tes.
+10. Jangan melewatkan kegagalan dengan menghapus assertions atau menggunakan mock untuk mengklaim fitur produksi bekerja.
+11. Bila environment cloud credentials tidak tersedia, uji semua yang mungkin menggunakan MinIO dan jelaskan satu per satu langkah cloud yang belum dapat diverifikasi.
+12. Buat perubahan kecil yang teruji dan commit terstruktur bila repository mengizinkan.
+13. Jangan berhenti hanya untuk meminta persetujuan pada keputusan teknis non-kritis. Ambil pilihan terbaik berdasarkan requirement dan dokumentasikan.
+14. Hindari overengineering tetapi jangan kompromikan reliability inti.
+
+DEFINITION OF DONE
+Aplikasi dapat dijalankan lokal, autentikasi bekerja, file video bisa diunggah, worker memproses video hingga menjadi HLS, film muncul di media library, host membuat room, guest join, semua menonton dan mengikuti play/pause/seek secara otomatis, late join serta reconnect berfungsi, chat dan presence realtime, private media protected, deployment builds berhasil dan test suite utama lulus.
+
+OUTPUT AKHIR YANG HARUS DIBERIKAN
+- Ringkasan fitur yang benar-benar selesai.
+- File dan modul penting.
+- Commands menjalankan aplikasi lokal dan produksi.
+- Environment variables yang harus diisi.
+- Hasil pengujian dengan pass/fail dan evidence.
+- Known limitations atau fitur yang masih membutuhkan credentials eksternal.
+- Panduan operasional upload video sampai nobar berjalan.
+- Tidak boleh mengklaim selesai apabila masih ada blocking error.
+MULAI: Inspeksi repository, tentukan statusnya, lalu kerjakan implementasi nyata sampai seluruh acceptance criteria terpenuhi semaksimal mungkin.

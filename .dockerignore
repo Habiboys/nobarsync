@@ -1,0 +1,9 @@
+.git
+.cursor
+apps/web/node_modules
+apps/web/dist
+apps/api/deps
+apps/api/_build
+infra/cloudflare/media-worker/node_modules
+**/*.md
+promt.txt

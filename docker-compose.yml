@@ -1,0 +1,209 @@
+services:
+  ngrok:
+    image: ngrok/ngrok:3
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: ["http", "http://caddy:8080", "--host-header=localhost:8080", "--url=${NGROK_URL:-}", "--log=stdout"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    ports:
+      - "127.0.0.1:4040:4040"
+    volumes:
+      - ./infra/ngrok/ngrok.yml:/etc/ngrok.yml:ro
+    depends_on:
+      - caddy
+
+  turn:
+    image: coturn/coturn:4.18.0-r0-alpine
+    profiles: ["turn"]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/coturn/entrypoint.sh"]
+    environment:
+      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:-}
+      TURN_REALM: ${TURN_REALM:-nobarsync.local}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+      TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
+      TURN_MAX_PORT: ${TURN_MAX_PORT:-49200}
+      TURN_TLS_ENABLED: ${TURN_TLS_ENABLED:-false}
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "5349:5349/tcp"
+      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}/udp"
+    volumes:
+      - ./infra/turn/entrypoint.sh:/etc/coturn/entrypoint.sh:ro
+      - ./infra/turn/turnserver.conf:/etc/coturn/nobarsync.conf:ro
+      - ./infra/turn/certs:/certs:ro
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    healthcheck:
+      test: ["CMD", "turnutils_stunclient", "-p", "3478", "127.0.0.1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 256m
+    cpus: 1
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nobarsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nobarsync}
+      POSTGRES_DB: ${POSTGRES_DB:-nobarsync}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nobarsync}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-nobarsync}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-nobarsync-secret}
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173"
+    ports:
+      - "${S3_PUBLIC_PORT:-9000}:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: cgr.dev/chainguard/minio-client:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: ["mc"]
+    command: ["mb", "--ignore-existing", "local/${S3_BUCKET:-nobarsync}"]
+    environment:
+      MC_HOST_local: http://${S3_ACCESS_KEY:-nobarsync}:${S3_SECRET_KEY:-nobarsync-secret}@minio:9000
+    restart: on-failure
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dev
+    environment:
+      MIX_ENV: dev
+      NOBARSYNC_ROLE: api
+      TURN_URLS: ${TURN_URLS:-}
+      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-nobarsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nobarsync}
+      POSTGRES_DB: ${POSTGRES_DB:-nobarsync}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-change-me-please-0123456789abcdef}
+      MEDIA_TOKEN_SECRET: ${MEDIA_TOKEN_SECRET:-dev-only-media-token-secret-change-me}
+      PHX_HOST: localhost
+      PORT: 4000
+      FORCE_SECURE_COOKIES: "false"
+      WEB_ORIGIN: http://localhost:5173
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-nobarsync}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-nobarsync-secret}
+      S3_BUCKET: ${S3_BUCKET:-nobarsync}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_SCHEME: ${S3_SCHEME:-http://}
+      S3_HOST: ${S3_HOST:-minio}
+      S3_PORT: ${S3_PORT:-9000}
+      S3_PUBLIC_SCHEME: ${S3_PUBLIC_SCHEME:-http://}
+      S3_PUBLIC_HOST: ${S3_PUBLIC_HOST:-localhost}
+      S3_PUBLIC_PORT: ${S3_PUBLIC_PORT:-9000}
+      MEDIA_DELIVERY: local
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@nobarsync.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-nobarsync-dev}
+      SEED_HOST_EMAIL: ${SEED_HOST_EMAIL:-host@nobarsync.local}
+      SEED_HOST_PASSWORD: ${SEED_HOST_PASSWORD:-nobarsync-dev}
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./apps/api:/app
+      - api_deps:/app/deps
+      - api_build:/app/_build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command: sh -c "mix deps.get && mix ecto.setup && mix phx.server"
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.dev
+    environment:
+      MIX_ENV: dev
+      NOBARSYNC_ROLE: worker
+      PHX_SERVER: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-nobarsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nobarsync}
+      POSTGRES_DB: ${POSTGRES_DB:-nobarsync}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-dev-only-secret-key-base-change-me-please-0123456789abcdef}
+      MEDIA_TOKEN_SECRET: ${MEDIA_TOKEN_SECRET:-dev-only-media-token-secret-change-me}
+      PORT: 4000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-nobarsync}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-nobarsync-secret}
+      S3_BUCKET: ${S3_BUCKET:-nobarsync}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_SCHEME: ${S3_SCHEME:-http://}
+      S3_HOST: ${S3_HOST:-minio}
+      S3_PORT: ${S3_PORT:-9000}
+      S3_PUBLIC_SCHEME: ${S3_PUBLIC_SCHEME:-http://}
+      S3_PUBLIC_HOST: ${S3_PUBLIC_HOST:-localhost}
+      S3_PUBLIC_PORT: ${S3_PUBLIC_PORT:-9000}
+      ENCODE_CONCURRENCY: ${ENCODE_CONCURRENCY:-1}
+      ENCODE_THREADS: ${ENCODE_THREADS:-2}
+    volumes:
+      - ./apps/api:/app
+      - worker_deps:/app/deps
+      - worker_build:/app/_build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command: sh -c "mix deps.get && mix phx.server"
+
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    environment:
+      VITE_API_URL: ""
+      VITE_PROXY_TARGET: http://api:4000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+    command: sh -c "if [ ! -x node_modules/.bin/vite ]; then npm install; fi && npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - web
+
+volumes:
+  postgres_data:
+  minio_data:
+  api_deps:
+  api_build:
+  worker_deps:
+  worker_build:
+  web_node_modules:

@@ -1,0 +1,8 @@
+{
+  "name": "nobarsync-load",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "phoenix": "^1.8.0"
+  }
+}

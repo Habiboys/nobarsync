@@ -1,0 +1,9 @@
+:8080 {
+	@api path /api/* /socket* /media/* /health*
+	handle @api {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:5173
+	}
+}

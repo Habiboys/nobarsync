@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Outfit", system-ui, -apple-system, sans-serif;
+  --font-display: "Outfit", "Inter", system-ui, sans-serif;
+  --color-ink: #f4f4f5;
+  --color-panel: #14141d;
+  --color-line: #272736;
+  --color-amber: #e50914;
+  --color-mist: #9ca3af;
+  --color-foam: #ffffff;
+  --color-paper: #0b0b10;
+}
+
+html {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at 50% 0%, #1a1018 0%, #0b0b10 48%);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input, select, textarea {
+  background-color: #181824;
+  color: #f4f4f5;
+  border-color: var(--color-line);
+}
+
+select option {
+  background-color: #181824;
+  color: #f4f4f5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.85);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0) scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-90px) scale(1);
+  }
+}
+
+.animate-float-up {
+  animation: float-up 2.2s ease-out forwards;
+}

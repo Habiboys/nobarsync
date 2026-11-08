@@ -1,0 +1,97 @@
+openapi: 3.1.0
+info:
+  title: NobarSync API
+  version: 0.1.0
+servers:
+  - url: /
+paths:
+  /health/live:
+    get:
+      responses:
+        "200":
+          description: Process is up
+  /health/ready:
+    get:
+      responses:
+        "200":
+          description: Database answers
+        "503":
+          description: Database is down
+  /api/v1/auth/register:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, display_name]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                display_name: { type: string }
+      responses:
+        "200":
+          description: Session cookie set
+        "422":
+          description: Invalid
+  /api/v1/auth/login:
+    post:
+      responses:
+        "200": { description: Session cookie set }
+        "401": { description: Invalid credentials }
+  /api/v1/auth/logout:
+    post:
+      responses:
+        "200": { description: Session revoked }
+  /api/v1/auth/me:
+    get:
+      responses:
+        "200": { description: Current user or guest }
+    patch:
+      responses:
+        "200": { description: Profile updated }
+  /api/v1/auth/guest:
+    post:
+      responses:
+        "200": { description: Guest cookie set }
+  /api/v1/auth/socket-token:
+    post:
+      responses:
+        "200": { description: Short-lived channel token }
+  /api/v1/rooms:
+    get:
+      responses:
+        "200": { description: Active and history rooms }
+    post:
+      responses:
+        "200": { description: Room created }
+  /api/v1/rooms/{code}/join:
+    post:
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Joined }
+        "403": { description: Locked, full, or forbidden }
+  /api/v1/playback/token:
+    post:
+      responses:
+        "200": { description: Playback descriptor and HMAC token }
+        "403": { description: Not allowed }
+  /api/v1/media:
+    get:
+      responses:
+        "200": { description: Library page }
+  /api/v1/media/uploads:
+    post:
+      responses:
+        "200": { description: Multipart upload session }
+  /api/v1/media/youtube:
+    post:
+      responses:
+        "200": { description: YouTube embed asset }
+components:
+  schemas: {}
