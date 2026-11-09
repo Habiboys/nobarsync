@@ -20,7 +20,7 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   const [message, setMessage] = useState("")
   const [holding, setHolding] = useState(false)
   const [remoteSpeech, setRemoteSpeech] = useState(false)
-  const [volume, setVolume] = useState(80)
+  const [volume, setVolume] = useState(150)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [device, setDevice] = useState("")
   onSpeechDuckRef.current = onSpeechDuck
@@ -125,9 +125,14 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
       <div className="section-title"><div><p className="eyebrow">VOICE LOUNGE</p><h2>Ngobrol sambil nonton <span>{peers.length}/8</span></h2><p className="mt-2 text-xs text-mist">Tahan tombol di film untuk bicara. Mikrofon tertutup sampai tombol ditekan, dan suara film senyap selama seseorang bicara.</p></div>
         {state === "idle" ? <button className="primary-button" disabled={!roomConnected} onClick={() => void join()}>Gabung call</button> : <button className="secondary-button" onClick={leave}>{state === "joining" ? "Batalkan call" : "Keluar call"}</button>}</div>
       <div className="flex flex-wrap items-center gap-3 mt-4">
-        <label className="text-sm">Mikrofon <select aria-label="Mikrofon call" disabled={state !== "idle"} value={device} onChange={e => setDevice(e.target.value)}><option value="">Perangkat default</option>{devices.filter(d => d.deviceId).map((d, i) => <option value={d.deviceId} key={d.deviceId}>{d.label || `Mikrofon ${i + 1}`}</option>)}</select></label>
+        <label className="text-sm">Mikrofon <select aria-label="Mikrofon call" disabled={state === "joining"} value={device} onChange={e => {
+          const next = e.target.value
+          setDevice(next)
+          if (state !== "active") return
+          void session.current?.setDevice(next).then(() => setMessage("Mikrofon diganti.")).catch((error: Error) => setMessage(error.name === "NotFoundError" || error.name === "OverconstrainedError" ? "Mikrofon itu tidak tersedia. Pilih perangkat lain." : "Gagal mengganti mikrofon."))
+        }}><option value="">Perangkat default</option>{devices.filter(d => d.deviceId).map((d, i) => <option value={d.deviceId} key={d.deviceId}>{d.label || `Mikrofon ${i + 1}`}</option>)}</select></label>
         {state === "active" ? <button className="secondary-button" onClick={() => { setMessage(""); session.current?.resumeAudio() }}>Aktifkan suara call</button> : null}
-        <label className="flex items-center gap-2 text-sm">Volume call <input aria-label="Volume call" type="range" min="0" max="100" value={volume} onChange={e => { const next = Number(e.target.value); setVolume(next); session.current?.setVolume(next / 100) }} /><span>{volume}%</span></label>
+        <label className="flex items-center gap-2 text-sm">Volume call <input aria-label="Volume call" type="range" min="0" max="200" value={volume} onChange={e => { const next = Number(e.target.value); setVolume(next); session.current?.setVolume(next / 100) }} /><span>{volume}%</span></label>
       </div>
       <p role="status" className="text-sm text-mist mt-3">{message || (state === "joining" ? "Meminta izin mikrofon dan menghubungkan…" : state === "active" ? (speaking ? "Seseorang sedang bicara · suara film senyap." : "Call aktif · tahan tombol di film untuk bicara.") : !roomConnected ? "Menunggu koneksi ruang sebelum bergabung call." : "Call opsional · maksimal 8 peserta agar ringan.")}</p>
       <div className="flex flex-wrap gap-2 mt-3">{peers.map(peer => <span className="voice-person" data-state={peer.state} data-received-frames={peer.receivedFrames} key={peer.id}>{peer.muted ? "🔇" : "🎙"} {peer.name} · {peer.state === "connected" ? "Terhubung" : peer.state === "failed" ? "Gagal" : peer.state === "disconnected" ? "Terputus" : "Menghubungkan"}</span>)}</div>

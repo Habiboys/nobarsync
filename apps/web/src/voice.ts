@@ -8,9 +8,14 @@ type Playback = { next: number; frames: number; sequence: number; sources: Set<A
 
 // Mean square of int16 samples. Quiet keepalive frames stay under the send gate.
 const SILENCE_POWER = 2500
-// Mu-law can nudge a quiet frame upward, so listener ducking starts above that gate.
-const SPEECH_POWER = SILENCE_POWER * 4
 const SPEECH_HANGOVER_MS = 400
+
+function micConstraints(deviceId: string): MediaStreamConstraints {
+  return { video: false, audio: {
+    deviceId: deviceId ? { exact: deviceId } : undefined,
+    channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+  } }
+}
 
 // Voice travels through the authenticated same-origin WebSocket. No direct peer
 // connection or external TURN endpoint is needed, including through HTTP ngrok.
@@ -51,10 +56,7 @@ export class VoiceSession {
     const context = new AudioContext({ sampleRate: 16000, latencyHint: "interactive" })
     this.context = context
     await context.resume()
-    const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
-      channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false,
-    } })
+    const stream = await navigator.mediaDevices.getUserMedia(micConstraints(deviceId))
     if (this.closed) { stream.getTracks().forEach(t => t.stop()); return }
     this.stream = stream
     this.muted = true
@@ -62,7 +64,12 @@ export class VoiceSession {
     stream.getAudioTracks()[0].onended = () => this.fail("Mikrofon terputus. Pilih perangkat dan gabung lagi.")
     this.output = context.createGain()
     this.output.gain.value = this.volume
-    this.output.connect(context.destination)
+    // Boosted call volume above 100% must not clip into distortion.
+    const limiter = context.createDynamicsCompressor()
+    limiter.threshold.value = -6
+    limiter.knee.value = 6
+    limiter.ratio.value = 12
+    this.output.connect(limiter).connect(context.destination)
     // Bundle the processor with the app: ngrok's intermediate warning must not
     // replace a separate worklet script fetch with an HTML response.
     const moduleUrl = URL.createObjectURL(new Blob([captureSource], { type: "application/javascript" }))
@@ -81,6 +88,8 @@ export class VoiceSession {
       if (this.closed) return
       this.presence = payload.peers as Presence
       for (const [id, peer] of this.peers) if (!this.presence[id]) { this.dispose(peer); this.peers.delete(id) }
+      // A held talk button keeps the film silent through pauses between words.
+      this.setRemoteTalking(Object.entries(this.presence).some(([id, { metas }]) => id !== this.id && metas.some(meta => meta.muted === false)))
       this.publish()
     })
     channel.on("voice.audio", payload => this.play(String(payload.from), String(payload.pcm), Number(payload.seq)))
@@ -148,17 +157,13 @@ export class VoiceSession {
     peer.frames++
     const buffer = context.createBuffer(1, 1280, 16000)
     const output = buffer.getChannelData(0)
-    let power = 0
     for (let i = 0; i < output.length; i++) {
       const value = ~bytes.charCodeAt(i) & 0xff
       const magnitude = (((value & 0x0f) << 3) + 0x84) << ((value & 0x70) >> 4)
-      const sample = (value & 0x80 ? 0x84 - magnitude : magnitude - 0x84) / 32768
-      output[i] = sample
-      power += sample * sample
+      output[i] = (value & 0x80 ? 0x84 - magnitude : magnitude - 0x84) / 32768
     }
     // Do not accumulate audio while the phone/browser suspends its audio device.
     if (context.state !== "running") { this.dispose(peer); return }
-    const audibleSpeech = this.volume > 0 && power / output.length >= SPEECH_POWER / (32768 * 32768)
     // Bounded jitter buffer: discard backlog after a TCP/network stall.
     if (peer.next > context.currentTime + 0.45) this.dispose(peer)
     const source = context.createBufferSource()
@@ -169,7 +174,6 @@ export class VoiceSession {
     const start = Math.max(peer.next, context.currentTime + 0.12)
     source.start(start)
     peer.next = start + buffer.duration
-    if (audibleSpeech) this.markRemoteSpeech((peer.next - context.currentTime) * 1000 + SPEECH_HANGOVER_MS)
   }
   private publish() {
     if (this.closed) return
@@ -192,6 +196,20 @@ export class VoiceSession {
     push?.receive("error", () => this.transmitFailed(generation))
       .receive("timeout", () => this.transmitFailed(generation))
   }
+  async setDevice(deviceId: string) {
+    const context = this.context
+    if (this.closed || !context || !this.capture) return
+    const stream = await navigator.mediaDevices.getUserMedia(micConstraints(deviceId))
+    if (this.closed || !this.capture) { stream.getTracks().forEach(track => track.stop()); return }
+    const previous = this.stream
+    this.stream = stream
+    this.armMic(!this.muted)
+    stream.getAudioTracks()[0].onended = () => this.fail("Mikrofon terputus. Pilih perangkat dan gabung lagi.")
+    this.microphone?.disconnect()
+    this.microphone = context.createMediaStreamSource(stream)
+    this.microphone.connect(this.capture)
+    previous?.getTracks().forEach(track => { track.onended = null; track.stop() })
+  }
   setVolume(value: number) { this.volume = value; if (this.output) this.output.gain.value = value }
   resumeAudio() { void this.context?.resume().catch(() => this.notice("Browser masih memblokir audio call.")) }
   private armMic(enabled: boolean) { this.stream?.getAudioTracks().forEach(track => { track.enabled = enabled }) }
@@ -201,14 +219,22 @@ export class VoiceSession {
     this.armMic(false)
     this.notice("Mikrofon belum terbuka. Tahan tombol bicara lagi.")
   }
-  private markRemoteSpeech(hangover: number) {
+  private setRemoteTalking(active: boolean) {
     if (this.closed) return
     window.clearTimeout(this.speechTimer)
-    if (!this.hearing) { this.hearing = true; this.speech(true) }
+    if (active) {
+      if (!this.hearing) { this.hearing = true; this.speech(true) }
+      return
+    }
+    if (!this.hearing) return
+    // Release after the last buffered words have played out.
+    const now = this.context?.currentTime || 0
+    let tail = 0
+    for (const peer of this.peers.values()) tail = Math.max(tail, peer.next - now)
     this.speechTimer = window.setTimeout(() => {
       this.hearing = false
       if (!this.closed) this.speech(false)
-    }, Math.max(SPEECH_HANGOVER_MS, hangover))
+    }, SPEECH_HANGOVER_MS + Math.max(0, tail) * 1000)
   }
   private silenceSpeech() {
     window.clearTimeout(this.speechTimer)
