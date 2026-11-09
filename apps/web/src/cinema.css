@@ -54,10 +54,10 @@
 .watch-grid { width: min(100%, 1640px); margin: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 24px; }
 .cinema-player { position: relative; isolation: isolate; overflow: hidden; border-radius: 10px; background: #050706; min-height: 220px; color: #f4f2ed; color-scheme: dark; --color-panel: #19201b; --color-ink: #f4f2ed; --color-mist: #b0b9ac; --control-line: #74816f; --accent-ink: #f4af96; }
 .cinema-player video { aspect-ratio: 16/9; }
-.cinema-player:fullscreen { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; justify-content: stretch; width: 100%; height: 100%; border-radius: 0; }
+.cinema-player:fullscreen { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; justify-content: stretch; width: 100%; height: 100%; border-radius: 0; }
 .cinema-player:fullscreen.with-chat { grid-template-columns: minmax(0, 1fr) min(340px, 38vw); }
 .cinema-player:fullscreen video, .cinema-player:fullscreen .youtube-frame { grid-area: 1 / 1; width: 100%; height: 100%; max-height: none; aspect-ratio: auto; object-fit: contain; }
-.cinema-player:fullscreen .player-controls { position: relative; grid-column: 1 / -1; grid-row: 2; z-index: 8; }
+.cinema-player:fullscreen .player-controls { position: relative; grid-area: 1 / 1; align-self: end; z-index: 8; }
 .cinema-player:fullscreen .chat-dock { grid-area: 1 / 2; position: relative; top: auto; width: auto; height: 100%; min-height: 0; border-radius: 0; border-block: 0; border-right: 0; }
 .youtube-frame { aspect-ratio: 16/9; width: 100%; }
 .youtube-frame iframe { width: 100%; height: 100%; aspect-ratio: 16/9; }
@@ -139,7 +139,8 @@
 .talk-button:hover { background: #2b3a2d; }
 .talk-button[aria-pressed="true"] { background: #ad3c25; border-color: #ffc4ac; }
 .talk-button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-.cinema-player:fullscreen .talk-button { bottom: 120px; }
+.cinema-player:fullscreen .talk-button { z-index: 9; right: 20px; bottom: 140px; }
+.cinema-player:fullscreen.with-chat .talk-button { right: 24px; bottom: 200px; }
 .voice-panel select { max-width: min(100%, 240px); margin-left: 8px; }
 .voice-person { border: 1px solid var(--color-line); border-radius: 4px; padding: 7px 10px; font-size: .8rem; }
 .voice-person[data-state="failed"], .voice-person[data-state="disconnected"] { border-color: var(--danger); }
@@ -213,6 +214,9 @@
   .theater-mode .chat-panel { position: static; height: 480px; }
 }
 @media (max-width: 719px) {
-  .cinema-player:fullscreen.with-chat { grid-template-columns: minmax(0, 1fr); }
+  .cinema-player:fullscreen.with-chat { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .cinema-player:fullscreen.with-chat .player-controls { grid-area: 2 / 1; }
   .cinema-player:fullscreen .chat-dock { grid-area: 1 / 1; z-index: 6; }
+  .cinema-player:fullscreen .talk-button { right: 12px; bottom: 120px; }
+  .cinema-player:fullscreen.with-chat .talk-button { right: 16px; bottom: 290px; }
 }

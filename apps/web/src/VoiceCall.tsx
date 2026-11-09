@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } fr
 import { createPortal } from "react-dom"
 import { VoiceSession, type VoicePeer } from "./voice"
 
-export function VoiceCall({ code, roomConnected, dock, fullscreen, showMic, onSpeechDuck }: {
+export function VoiceCall({ code, roomConnected, dock, joinDock, fullscreen, showMic, onSpeechDuck }: {
   code: string
   roomConnected: boolean
   dock: HTMLElement | null
+  joinDock: HTMLElement | null
   fullscreen: boolean
   showMic: boolean
   onSpeechDuck: (active: boolean) => void
@@ -123,14 +124,14 @@ export function VoiceCall({ code, roomConnected, dock, fullscreen, showMic, onSp
   }
   function leave() { session.current?.close(); session.current = null; setState("idle"); setPeers([]); setMessage(""); resetTalk() }
   const speaking = holding || remoteSpeech
-  const talkButton = <button type="button" className={fullscreen ? "control-icon control-text" : "talk-button"} aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "Bicara" : fullscreen ? "Tahan" : "Mic"}</button>
+  const talkButton = <button type="button" className="talk-button" aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "BICARA" : "MIC"}</button>
   const talk = showMic && dock && state === "active" ? createPortal(talkButton, dock) : null
-  const joinMic = showMic && dock && fullscreen && state !== "active" ? createPortal(
+  const joinMic = showMic && joinDock && fullscreen && state !== "active" ? createPortal(
     <>
       <button type="button" className="control-icon control-text" disabled={!roomConnected || state === "joining"} aria-label="Gabung mikrofon" onClick={() => void join()}>{state === "joining" ? "…" : "Gabung"}</button>
       {message ? <span className="fs-mic-note" role="status">{message}</span> : null}
     </>,
-    dock,
+    joinDock,
   ) : null
   return <>
     {talk}
