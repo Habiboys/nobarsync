@@ -124,7 +124,7 @@ services:
       SEED_HOST_EMAIL: ${SEED_HOST_EMAIL:-host@nobarsync.local}
       SEED_HOST_PASSWORD: ${SEED_HOST_PASSWORD:-nobarsync-dev}
     ports:
-      - "4000:4000"
+      - "${API_HOST_PORT:-4001}:4000"
     volumes:
       - ./apps/api:/app
       - api_deps:/app/deps

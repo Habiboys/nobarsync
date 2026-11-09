@@ -11,6 +11,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    allowedHosts: ["manonton.neotelemetri.id", "72.61.210.243"],
     watch: { usePolling: true, interval: 400 },
     proxy: {
       "/api": target,
