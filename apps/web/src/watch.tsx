@@ -1,4 +1,6 @@
 import { VoiceCall } from "./VoiceCall"
+import { Brand } from "./Brand"
+import { ThemeToggle } from "./ThemeToggle"
 import Hls from "hls.js"
 import { useEffect, useRef, useState } from "react"
 import { Channel, Socket } from "phoenix"
@@ -553,7 +555,7 @@ function WatchSession({ code }: { code: string }) {
   const canChat = chatPermission === "everyone" || (chatPermission === "host_mod" && canControl)
   return (
     <main className={`watch-page ${theater ? "theater-mode" : ""}`}>
-      <header className="watch-header"><Link className="brand" to="/dashboard">NOBAR<span>SYNC</span><small>WATCH TOGETHER</small></Link><div className="flex items-center gap-3"><Badge tone={connected ? "green" : "amber"}>{connected ? "● LIVE ROOM" : "Menghubungkan"}</Badge><Link to={`/rooms/${code}`} className="text-sm text-mist">Kelola ruang ↗</Link></div></header>
+      <header className="watch-header"><Brand /><div><Badge tone={connected ? "green" : "amber"}>{connected ? "Terhubung" : "Menghubungkan"}</Badge><ThemeToggle /><Link to={`/rooms/${code}`} className="secondary-button">Kelola ruang</Link></div></header>
       <div className={`watch-grid ${!chatOpen ? "chat-collapsed" : ""}`}>
         <section className="min-w-0">
           <div ref={(node) => { frameRef.current = node; setPlayerNode((current) => current === node ? current : node) }} className="cinema-player">
@@ -564,9 +566,9 @@ function WatchSession({ code }: { code: string }) {
             <div ref={ytNodeRef} className={`youtube-frame ${isYoutube ? "" : "hidden"}`} />
             {isYoutube ? <div className="absolute inset-0 bottom-24" aria-hidden="true" /> : null}
             <div className="player-topline"><span>◉ {code}</span><span>{canControl ? "KONTROL HOST" : "MENGIKUTI HOST"}</span></div>
-            {processing ? <div className="player-message"><div><span className="eyebrow">UPLOAD STUDIO</span><h2>{processing.status === "failed" ? "Pengolahan gagal" : "Menyiapkan film"}</h2><p>{processing.error || "Film muncul otomatis setelah pengolahan selesai."}</p><progress max={100} value={processing.progress} /><p>{Math.round(processing.progress)}% · {processing.status}</p></div></div> : null}
+            {processing ? <div className="player-message"><div><h2>{processing.status === "failed" ? "Pengolahan gagal" : "Menyiapkan film"}</h2><p>{processing.error || "Film muncul otomatis setelah pengolahan selesai."}</p><progress max={100} value={processing.progress} /><p>{Math.round(processing.progress)}% · {processing.status}</p></div></div> : null}
             {countdown > 0 ? <div className="countdown-overlay" aria-live="polite"><span>{countdown}</span><p>Bersiap, mulai bersama</p></div> : null}
-            {!playback && !processing ? <div className="player-message"><div><span className="eyebrow">YOUR PRIVATE CINEMA</span><h2>{!snapshot ? "Menghubungkan ke ruang…" : snapshot.media_id ? "Menyiapkan pemutar…" : "Malam film dimulai di sini."}</h2><p>{!snapshot || snapshot.media_id ? status : "Pilih film dari pengaturan ruang untuk mulai menonton."}</p></div></div> : null}
+            {!playback && !processing ? <div className="player-message"><div><h2>{!snapshot ? "Menghubungkan ke ruang…" : snapshot.media_id ? "Menyiapkan pemutar…" : "Host belum memilih film"}</h2><p>{!snapshot || snapshot.media_id ? status : "Pilih film dari pengaturan ruang untuk mulai menonton."}</p></div></div> : null}
             {loading && playback && !countdown ? <span className="player-loading"><i /> Memuat buffer</span> : null}
             {blocked ? <button className="activate-player" onClick={() => { changeVolume(volume, false); void activatePlayer().then((ok) => { if (ok) tickRef.current() }) }}>Siap Nonton — Aktifkan Player</button> : null}
             <div className="reaction-overlay" aria-live="off">{reactions.map((item) => <span key={item.id} className="animate-float-up" title={item.display_name}>{item.emoji}</span>)}</div>
@@ -585,7 +587,7 @@ function WatchSession({ code }: { code: string }) {
               </div>
             </div>
           </div>
-          <div className="watch-title"><div><p className="eyebrow">NOW WATCHING · {code}</p><h1>{playback?.title || roomTitle}</h1><p role="status">{status}</p></div><button className="secondary-button" onClick={() => setChatOpen(!chatOpen)}>{chatOpen ? "Sembunyikan chat" : "Tampilkan chat"}</button></div>
+          <div className="watch-title"><div><p className="eyebrow">Ruang {code}</p><h1>{playback?.title || roomTitle}</h1><p role="status">{status}</p></div><button className="secondary-button" onClick={() => setChatOpen(!chatOpen)}>{chatOpen ? "Sembunyikan chat" : "Tampilkan chat"}</button></div>
           <div className="room-toolbar">
             <Badge tone={metrics?.host_buffering ? "amber" : "green"}>{metrics?.host_buffering ? "Host buffering · ruang dijeda" : playing ? "Sedang diputar" : "Dijeda"}</Badge>
             <button className="secondary-button" onClick={() => void resync()}>↻ Sinkronkan saya</button>
@@ -594,7 +596,7 @@ function WatchSession({ code }: { code: string }) {
             <button className="secondary-button" onClick={async () => { const next = !ready; if (await action("ready", { ready: next })) setReady(next) }}>{ready ? "✓ Saya siap" : "Saya siap nonton"}</button>
             <button className="secondary-button" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}/j/${code}`).then(() => setStatus("Tautan undangan disalin")).catch(() => setStatus(`Tautan: ${window.location.origin}/j/${code}`))}>Undang teman ↗</button>
           </div>
-          <section className="audience-panel"><div className="section-title"><div><p className="eyebrow">THE AUDIENCE</p><h2>Menonton bersama <span>{people.length}</span></h2></div><small>Selisih terhadap host · diperbarui langsung</small></div><div className="audience-grid">
+          <section className="audience-panel"><div className="section-title"><div><h2>Menonton bersama <span>{people.length}</span></h2></div><small>Selisih pemutaran terhadap host</small></div><div className="audience-grid">
             {people.map((person) => { const metric = metrics?.members.find((item) => item.member_id === person.id); const stale = !metric || Date.now() - metric.updated_at_ms > 8000; const lag = metric?.lag_ms || 0; return <article key={person.id} className="audience-card"><div className={`avatar ${person.role === "host" ? "host-avatar" : ""}`}>{person.display_name.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><strong className="block truncate">{person.display_name}{person.id === memberRef.current ? " (kamu)" : ""}</strong><small>{person.role === "host" ? "♛ Host" : person.role === "moderator" ? "Moderator" : "Penonton"}{readiness[person.id] ? " · ✓ Siap" : ""}</small><div className="mt-2"><Badge tone={stale || metric?.buffering ? "amber" : Math.abs(lag) > 1500 ? "red" : "green"}>{stale ? "Menunggu status" : metric?.buffering ? "Buffering" : Math.abs(lag) <= 500 ? "Tersinkron" : `${lag > 0 ? "Lebih cepat" : "Tertinggal"} ${lagLabel(lag)}`}</Badge></div></div>{role === "host" && person.role !== "host" ? <details className="member-menu"><summary aria-label={`Kelola ${person.display_name}`}>•••</summary><button onClick={() => void action("transfer-host", { member_id: person.id })}>Jadikan host</button><button onClick={() => void action("kick", { member_id: person.id })}>Keluarkan</button></details> : null}</article> })}
             {!people.length ? <p className="text-sm text-mist">Menghubungkan peserta…</p> : null}
           </div></section>

@@ -71,7 +71,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-nobarsync}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-nobarsync-secret}
-      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173"
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:5178,http://127.0.0.1:5178,http://localhost:5173,http://localhost:8080"
     ports:
       - "${S3_PUBLIC_PORT:-9000}:9000"
       - "9001:9001"
@@ -107,7 +107,7 @@ services:
       PHX_HOST: localhost
       PORT: 4000
       FORCE_SECURE_COOKIES: "false"
-      WEB_ORIGIN: http://localhost:5173
+      WEB_ORIGIN: http://localhost:5178
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-nobarsync}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-nobarsync-secret}
       S3_BUCKET: ${S3_BUCKET:-nobarsync}
@@ -180,8 +180,8 @@ services:
     environment:
       VITE_API_URL: ""
       VITE_PROXY_TARGET: http://api:4000
-    ports:
-      - "5173:5173"
+    expose:
+      - "5173"
     volumes:
       - ./apps/web:/app
       - web_node_modules:/app/node_modules
@@ -192,7 +192,7 @@ services:
   caddy:
     image: caddy:2-alpine
     ports:
-      - "8080:8080"
+      - "${WEB_PORT:-5178}:8080"
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:

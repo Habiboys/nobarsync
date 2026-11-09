@@ -37,6 +37,7 @@ export class VoiceSession {
   private quietFrames = 0
   private statsTimer = 0
   private speechTimer = 0
+  private micTimer = 0
   private update: (peers: VoicePeer[]) => void
   private notice: (message: string) => void
   private ended: () => void
@@ -158,7 +159,7 @@ export class VoiceSession {
     }
     // Do not accumulate audio while the phone/browser suspends its audio device.
     if (context.state !== "running") { this.dispose(peer); return }
-    if (power / output.length >= SPEECH_POWER / (32768 * 32768)) this.markRemoteSpeech()
+    const audibleSpeech = this.volume > 0 && power / output.length >= SPEECH_POWER / (32768 * 32768)
     // Bounded jitter buffer: discard backlog after a TCP/network stall.
     if (peer.next > context.currentTime + 0.45) this.dispose(peer)
     const source = context.createBufferSource()
@@ -169,6 +170,7 @@ export class VoiceSession {
     const start = Math.max(peer.next, context.currentTime + 0.12)
     source.start(start)
     peer.next = start + buffer.duration
+    if (audibleSpeech) this.markRemoteSpeech((peer.next - context.currentTime) * 1000 + SPEECH_HANGOVER_MS)
   }
   private publish() {
     if (this.closed) return
@@ -181,6 +183,7 @@ export class VoiceSession {
   }
   transmit(open: boolean) {
     if (this.closed || !this.joined) return
+    window.clearTimeout(this.micTimer)
     const generation = ++this.talkGeneration
     if (!open) {
       this.muted = true
@@ -190,8 +193,12 @@ export class VoiceSession {
     }
     this.channel?.push("voice.mute", { muted: false }).receive("ok", () => {
       if (this.closed || generation !== this.talkGeneration) return
-      this.muted = false
-      this.armMic(true)
+      // Give speaker/device buffers time to drain after the local film was muted.
+      this.micTimer = window.setTimeout(() => {
+        if (this.closed || generation !== this.talkGeneration) return
+        this.muted = false
+        this.armMic(true)
+      }, 160)
     }).receive("error", () => this.transmitFailed(generation))
       .receive("timeout", () => this.transmitFailed(generation))
   }
@@ -204,14 +211,14 @@ export class VoiceSession {
     this.armMic(false)
     this.notice("Mikrofon belum terbuka. Tahan tombol bicara lagi.")
   }
-  private markRemoteSpeech() {
+  private markRemoteSpeech(hangover: number) {
     if (this.closed) return
     window.clearTimeout(this.speechTimer)
     if (!this.hearing) { this.hearing = true; this.speech(true) }
     this.speechTimer = window.setTimeout(() => {
       this.hearing = false
       if (!this.closed) this.speech(false)
-    }, SPEECH_HANGOVER_MS)
+    }, Math.max(SPEECH_HANGOVER_MS, hangover))
   }
   private silenceSpeech() {
     window.clearTimeout(this.speechTimer)

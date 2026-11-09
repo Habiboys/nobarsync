@@ -89,6 +89,9 @@ defmodule NobarSyncWeb.Router do
     scope "/admin" do
       pipe_through [:user, :admin]
       get "/users", AdminController, :users
+      patch "/users/:id", AdminController, :update_user
+      post "/users/:id/revoke-sessions", AdminController, :revoke_sessions
+      get "/audit", AdminController, :audit
       get "/media", AdminController, :media
       get "/rooms", AdminController, :rooms
       get "/jobs", AdminController, :jobs

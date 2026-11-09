@@ -1,6 +1,6 @@
 import { useSession } from "./session"
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router"
-import { Admin, CreateRoom, Dashboard, Join, Landing, Library, Lobby, Login, Profile, QuickJoin, Register, UploadStudio } from "./pages"
+import { Admin, CreateRoom, Dashboard, Join, Landing, Library, Lobby, Login, Profile, QuickJoin, Register } from "./pages"
 import { lazy, Suspense } from "react"
 const WatchRoom = lazy(() => import("./watch").then((module) => ({ default: module.WatchRoom })))
 
@@ -22,7 +22,7 @@ export function App() {
       <Route element={<RequireLogin />} >
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/library" element={<Library />} />
-      <Route path="/upload" element={<UploadStudio />} />
+      <Route path="/upload" element={<Navigate replace to="/library?upload=1" />} />
       <Route path="/rooms/new" element={<CreateRoom />} />
       <Route path="/join" element={<Join />} />
       <Route path="/j/:code" element={<QuickJoin />} />

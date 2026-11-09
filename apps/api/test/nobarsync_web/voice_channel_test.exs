@@ -14,7 +14,7 @@ defmodule NobarSyncWeb.VoiceChannelTest do
     {:ok, %{room: room}} = WatchRooms.create_room(user, %{"title" => "Voice relay"})
 
     token =
-      Phoenix.Token.sign(NobarSyncWeb.Endpoint, "socket", %{user_id: user.id, guest_id: nil})
+      Phoenix.Token.sign(NobarSyncWeb.Endpoint, "socket", Accounts.socket_claims(user))
 
     {:ok, socket} = connect(UserSocket, %{"token" => token})
     %{room: room, socket: socket}

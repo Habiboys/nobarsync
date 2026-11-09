@@ -1,4 +1,11 @@
 .git
+.env
+.env.*
+.agents
+.codex
+**/node_modules
+**/test-results
+tests/e2e/playwright-report
 .cursor
 apps/web/node_modules
 apps/web/dist

@@ -26,7 +26,7 @@ defmodule NobarSyncWeb.RoomChannelTest do
     {:ok, _} = WatchRooms.join(room, %{user: viewer, guest: nil}, nil)
 
     token =
-      Phoenix.Token.sign(NobarSyncWeb.Endpoint, "socket", %{user_id: viewer.id, guest_id: nil})
+      Phoenix.Token.sign(NobarSyncWeb.Endpoint, "socket", Accounts.socket_claims(viewer))
 
     {:ok, socket} = connect(UserSocket, %{"token" => token})
     %{socket: socket, room: room}

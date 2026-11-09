@@ -6,6 +6,8 @@ defmodule NobarSync.Accounts.User do
     field :display_name, :string
     field :password, :string, virtual: true, redact: true
     field :password_hash, :string, redact: true
+    field :status, :string, default: "active"
+    field :auth_version, :integer, default: 0
     field :role, :string, default: "user"
     field :avatar_key, :string
     timestamps()
@@ -21,6 +23,15 @@ defmodule NobarSync.Accounts.User do
     |> validate_length(:password, min: 8, max: 72)
     |> unique_constraint(:email)
     |> put_password_hash()
+  end
+
+  def admin_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:display_name, :role, :status])
+    |> validate_required([:display_name, :role, :status])
+    |> validate_length(:display_name, min: 2, max: 40)
+    |> validate_inclusion(:role, ~w(user admin))
+    |> validate_inclusion(:status, ~w(active suspended))
   end
 
   def profile_changeset(user, attrs) do

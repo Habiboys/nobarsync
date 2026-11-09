@@ -140,6 +140,8 @@ defmodule NobarSyncWeb.AuthController do
       email: user.email,
       display_name: user.display_name,
       role: user.role,
+      status: user.status,
+      plan: "free",
       avatar_key: user.avatar_key
     }
   end

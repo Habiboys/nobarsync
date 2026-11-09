@@ -44,7 +44,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return data as T
 }
 
-export type User = { id: string; email: string; display_name: string; role: string; avatar_key?: string | null }
+export type User = { id: string; email: string; display_name: string; role: string; status?: string; plan?: "free"; avatar_key?: string | null }
 export type Guest = { id: string; display_name: string }
 export type Media = {
   id: string

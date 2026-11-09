@@ -4,6 +4,8 @@ import type { ReactNode } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter } from "react-router"
 import { App } from "./App"
+import { ThemeProvider } from "./ThemeProvider"
+import { PageTitle } from "./PageTitle"
 import { Toasts } from "./ui"
 import "@fontsource/outfit/latin-400.css"
 import "@fontsource/outfit/latin-600.css"
@@ -29,10 +31,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        <ThemeProvider><BrowserRouter>
+          <PageTitle />
           <App />
           <Toasts />
-        </BrowserRouter>
+        </BrowserRouter></ThemeProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   </StrictMode>,

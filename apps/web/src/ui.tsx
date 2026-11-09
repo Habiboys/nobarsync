@@ -14,7 +14,7 @@ export function Toasts() {
       {items.map((item) => (
         <div
           key={item.id}
-          className="rounded-xl border border-white/15 bg-zinc-900/95 px-4 py-3 text-sm text-zinc-100 shadow-2xl backdrop-blur"
+          className="toast"
         >
           {item.text}
         </div>
@@ -27,15 +27,10 @@ export function Button(
   props: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: "amber" | "ghost" | "danger" }
 ) {
   const { tone = "amber", className = "", ...rest } = props
-  const look =
-    tone === "amber"
-      ? "bg-amber text-white shadow-sm shadow-amber/25 hover:brightness-110"
-      : tone === "danger"
-        ? "border border-red-500/40 bg-red-500/15 text-red-200 hover:bg-red-500/25"
-        : "border border-white/12 bg-white/5 text-zinc-100 hover:bg-white/10"
+  const look = tone === "amber" ? "button-primary" : tone === "danger" ? "button-danger" : "button-ghost"
   return (
     <button
-      className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition ${look} ${className}`}
+      className={`button ${look} ${className}`}
       {...rest}
     />
   )
@@ -44,10 +39,10 @@ export function Button(
 export function Field(props: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   const { label, className = "", ...rest } = props
   return (
-    <label className="block text-sm">
-      <span className="mb-1.5 block font-medium text-zinc-300">{label}</span>
+    <label className="field">
+      <span>{label}</span>
       <input
-        className={`w-full rounded-xl border border-white/12 bg-[#181824] px-3.5 py-2.5 text-zinc-100 placeholder:text-zinc-500 focus:border-amber ${className}`}
+        className={`w-full ${className}`}
         {...rest}
       />
     </label>
@@ -56,12 +51,12 @@ export function Field(props: InputHTMLAttributes<HTMLInputElement> & { label: st
 
 export function Panel(props: { title?: string; subtitle?: string; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-2xl border border-white/10 bg-panel/95 p-5 shadow-xl ${props.className || ""}`}>
+    <section className={`panel ${props.className || ""}`}>
       {props.title || props.right ? (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="panel-heading">
           <div>
-            {props.title ? <h2 className="font-display text-xl font-bold tracking-tight text-white">{props.title}</h2> : null}
-            {props.subtitle ? <p className="mt-0.5 text-xs text-mist">{props.subtitle}</p> : null}
+            {props.title ? <h2>{props.title}</h2> : null}
+            {props.subtitle ? <p>{props.subtitle}</p> : null}
           </div>
           {props.right}
         </div>
@@ -73,18 +68,8 @@ export function Panel(props: { title?: string; subtitle?: string; right?: ReactN
 
 export function Badge(props: { tone?: "green" | "amber" | "red" | "slate" | "brand"; children: ReactNode }) {
   const { tone = "slate", children } = props
-  const style =
-    tone === "green"
-      ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
-      : tone === "amber"
-        ? "border-amber-500/35 bg-amber-500/15 text-amber-300"
-        : tone === "red"
-          ? "border-red-500/35 bg-red-500/15 text-red-300"
-          : tone === "brand"
-            ? "border-red-500/40 bg-amber/20 text-red-200"
-            : "border-white/12 bg-white/5 text-zinc-300"
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${style}`}>
+    <span className={`status-label status-${tone}`}>
       {children}
     </span>
   )

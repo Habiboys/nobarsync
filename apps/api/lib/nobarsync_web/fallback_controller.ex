@@ -28,6 +28,9 @@ defmodule NobarSyncWeb.FallbackController do
 
   def call(conn, {:error, :forbidden}), do: error(conn, 403, "forbidden", "Tidak diizinkan")
 
+  def call(conn, {:error, :account_suspended}),
+    do: error(conn, 403, "account_suspended", "Akun dinonaktifkan. Hubungi admin.")
+
   def call(conn, {:error, :invalid_credentials}),
     do: error(conn, 401, "invalid_credentials", "Email atau kata sandi salah")
 
@@ -35,6 +38,7 @@ defmodule NobarSyncWeb.FallbackController do
 
   def call(conn, {:error, {:invalid, message}}) when is_binary(message),
     do: error(conn, 422, "invalid", message)
+
   def call(conn, {:error, :expired}), do: error(conn, 410, "expired", "Kedaluwarsa")
   def call(conn, {:error, :room_locked}), do: error(conn, 403, "room_locked", "Room dikunci")
   def call(conn, {:error, :room_full}), do: error(conn, 403, "room_full", "Room penuh")

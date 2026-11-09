@@ -1,10 +1,17 @@
 <!doctype html>
-<html lang="id" style="color-scheme: dark">
+<html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NobarSync — Nonton Bareng Sinkron</title>
+    <meta name="theme-color" content="#111512" />
+    <meta name="description" content="Manonton: buat ruang, pilih film, dan nonton bersama teman dengan pemutaran tersinkron." />
+    <title>Manonton | Nonton bersama</title>
+    <script>
+      try {
+        const stored = localStorage.getItem("manonton-theme");
+        document.documentElement.dataset.theme = stored === "light" || stored === "dark" ? stored : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      } catch { document.documentElement.dataset.theme = "dark"; }
+    </script>
   </head>
   <body>
     <div id="root"></div>

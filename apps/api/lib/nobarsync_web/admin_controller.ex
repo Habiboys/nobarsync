@@ -2,14 +2,31 @@ defmodule NobarSyncWeb.AdminController do
   use NobarSyncWeb, :controller
 
   import Ecto.Query
-  alias NobarSync.{Accounts, Repo, WatchRooms}
+  alias NobarSync.{Repo, WatchRooms}
   alias NobarSync.Media.Asset
 
-  def users(conn, _),
-    do:
-      json(conn, %{
-        users: Enum.map(Accounts.list_users(), &NobarSyncWeb.AuthController.user_json/1)
-      })
+  def users(conn, params) do
+    result = NobarSync.AdminAccounts.list(params)
+    json(conn, %{result | users: Enum.map(result.users, &user_json/1)})
+  end
+
+  def update_user(conn, %{"id" => id} = params) do
+    with {:ok, user} <- NobarSync.AdminAccounts.update(conn.assigns.current_user, id, params) do
+      json(conn, %{user: user_json(user)})
+    end
+  end
+
+  def revoke_sessions(conn, %{"id" => id} = params) do
+    with {:ok, user} <-
+           NobarSync.AdminAccounts.update(conn.assigns.current_user, id, params, true) do
+      json(conn, %{user: user_json(user)})
+    end
+  end
+
+  def audit(conn, _), do: json(conn, %{events: NobarSync.AdminAccounts.audit()})
+
+  defp user_json(user),
+    do: Map.merge(NobarSyncWeb.AuthController.user_json(user), %{inserted_at: user.inserted_at})
 
   def media(conn, params), do: NobarSyncWeb.MediaController.index(conn, params)
 

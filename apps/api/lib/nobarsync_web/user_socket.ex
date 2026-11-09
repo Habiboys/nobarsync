@@ -8,8 +8,14 @@ defmodule NobarSyncWeb.UserSocket do
   @impl true
   def connect(%{"token" => token}, socket, _info) do
     case Phoenix.Token.verify(NobarSyncWeb.Endpoint, "socket", token, max_age: 120) do
-      {:ok, %{user_id: user_id, guest_id: nil}} when is_binary(user_id) ->
-        {:ok, assign(socket, user_id: user_id, guest_id: nil)}
+      {:ok, %{user_id: user_id, guest_id: nil, auth_version: version}} when is_binary(user_id) ->
+        case NobarSync.Accounts.get_user(user_id) do
+          %{status: "active", auth_version: ^version} ->
+            {:ok, assign(socket, user_id: user_id, guest_id: nil)}
+
+          _ ->
+            :error
+        end
 
       _ ->
         :error

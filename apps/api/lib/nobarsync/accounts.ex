@@ -38,13 +38,25 @@ defmodule NobarSync.Accounts do
     user = get_user_by_email(email || "")
 
     if valid_password?(user, password || "") do
-      {:ok, user}
+      if user.status == "active", do: {:ok, user}, else: {:error, :account_suspended}
     else
       {:error, :invalid_credentials}
     end
   end
 
   def create_session(%User{} = user, meta) do
+    Repo.transaction(fn ->
+      current = Repo.one(from u in User, where: u.id == ^user.id, lock: "FOR UPDATE")
+      if is_nil(current) or current.status != "active", do: Repo.rollback(:account_suspended)
+
+      case insert_session(current, meta) do
+        {:ok, result} -> result
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp insert_session(%User{} = user, meta) do
     token = random_token()
     csrf = random_token()
     now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
@@ -71,6 +83,7 @@ defmodule NobarSync.Accounts do
     Session
     |> where([s], s.token_hash == ^hash_token(token))
     |> where([s], is_nil(s.revoked_at) and s.expires_at > ^now)
+    |> join(:inner, [s], u in User, on: u.id == s.user_id and u.status == "active")
     |> preload(:user)
     |> Repo.one()
   end
@@ -124,7 +137,7 @@ defmodule NobarSync.Accounts do
   end
 
   def socket_claims(%User{} = user) do
-    %{user_id: user.id, guest_id: nil}
+    %{user_id: user.id, guest_id: nil, auth_version: user.auth_version}
   end
 
   def socket_claims(%GuestIdentity{} = guest) do

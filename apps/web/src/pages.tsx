@@ -1,36 +1,43 @@
+import { AdminConsole } from "./AdminConsole"
+import { Brand } from "./Brand"
+import { ThemeToggle } from "./ThemeToggle"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
-import { Link, NavLink, Navigate, useLocation, useNavigate, useParams } from "react-router"
+import { Link, NavLink, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router"
 import { api } from "./api"
 import type { Media, Member, Room } from "./api"
 import { useSession } from "./session"
 import { Button, Field, Panel } from "./ui"
 import { useToasts } from "./toasts"
+const MediaPreview = lazy(() => import("./MediaPreview"))
 
 function Shell(props: { children: ReactNode }) {
   const session = useSession()
-  const name = session.data?.user?.display_name || session.data?.guest?.display_name
+  const name = session.data?.user?.display_name
+  const navigation = <>
+    <NavLink to="/dashboard">Ruang saya</NavLink>
+    <NavLink to="/library">Pustaka</NavLink>
+    <NavLink to="/join">Gabung ruang</NavLink>
+    {name ? <NavLink to="/profile">Akun</NavLink> : <NavLink to="/login">Masuk</NavLink>}
+    {session.data?.user?.role === "admin" ? <NavLink to="/admin">Admin</NavLink> : null}
+  </>
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Lewati ke konten</a>
       <header className="app-header">
-        <Link to="/dashboard" className="brand">NOBAR<span>SYNC</span><small>WATCH TOGETHER</small></Link>
-        <nav>
-          <NavLink to="/dashboard">Beranda</NavLink>
-          <NavLink to="/library">Pustaka film</NavLink>
-          <NavLink to="/upload">Upload studio</NavLink>
-          <NavLink to="/join">Gabung ruang</NavLink>
-          {name ? <NavLink className="profile-link" to="/profile">◉ {name}</NavLink> : <NavLink className="profile-link" to="/login">Masuk →</NavLink>}
-          {session.data?.user?.role === "admin" ? <NavLink to="/admin">Admin</NavLink> : null}
-        </nav>
+        <Brand />
+        <nav className="desktop-nav" aria-label="Utama">{navigation}</nav>
+        <div className="header-tools"><ThemeToggle /><details className="mobile-menu"><summary>Menu</summary><nav aria-label="Menu ponsel">{navigation}</nav></details></div>
       </header>
-      {props.children}
+      <main id="main-content">{props.children}</main>
+      <footer className="app-footer"><span>Manonton</span><span>Nonton bersama, gratis.</span></footer>
     </div>
   )
 }
 
 export function Landing() {
-  return <Shell><section className="cinema-hero"><span className="eyebrow">MOVIE NIGHTS, WITHOUT THE DISTANCE.</span><h1>Jarak boleh jauh.<br />Momen tetap bersama.</h1><p>Ruang nonton pribadi untuk orang-orang favoritmu. Pilih film, bagikan undangan, dan nikmati cerita bersama dalam satu garis waktu.</p><div className="mt-7 flex flex-wrap gap-3"><Link to="/rooms/new"><Button>▶ Mulai malam film</Button></Link><Link to="/join"><Button tone="ghost">Gabung dengan kode ↗</Button></Link></div><p className="mt-6 text-xs">Pemutaran tersinkron · Obrolan langsung · Kualitas adaptif</p></section><div className="grid gap-4 md:grid-cols-3">{[{ n: "01", title: "Siapkan layarmu", text: "Unggah video atau tambahkan YouTube. Video unggahan diolah ke beberapa kualitas tanpa upscale." }, { n: "02", title: "Kumpulkan temanmu", text: "Buat ruang pribadi dan kirim tautan undangan. Teman mendaftar atau login sebelum bergabung." }, { n: "03", title: "Tekan play, bersama", text: "Host memimpin pemutaran. Pantau selisih waktu setiap peserta, kirim reaksi, dan ngobrol di samping film." }].map((item) => <Panel key={item.n} title={item.title}><p className="eyebrow mb-3">{item.n} / THE EXPERIENCE</p><p className="text-sm leading-7 text-mist">{item.text}</p></Panel>)}</div></Shell>
+  return <Shell><section className="landing-intro"><h1>Malam ini,<em>manonton bareng.</em></h1><div><p>Pilih film, buat ruang, lalu bagikan kodenya ke teman. Host memimpin pemutaran, sementara kalian bisa chat dan bergantian bicara.</p><div className="landing-actions"><Link className="button button-primary" to="/rooms/new">Buat ruang nonton</Link><Link className="button button-ghost" to="/join">Gabung dengan kode</Link></div></div></section><p className="landing-note">Gunakan video unggahan sendiri atau player YouTube. Semua peserta perlu akun untuk bergabung. Saat call, tahan tombol bicara; suara film kembali setelah percakapan selesai.</p></Shell>
 }
 
 export function Login() {
@@ -52,11 +59,11 @@ export function Login() {
   })
   return (
     <Shell>
-      <Panel title="Masuk" className="mx-auto max-w-md">
+      <div className="page-heading"><div><h1>Masuk ke Manonton</h1><p>Lanjutkan ke ruang dan film Anda.</p></div></div><Panel className="max-w-md">
         <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); login.mutate() }}>
-          <Field label="Email" value={email} onChange={(event) => setEmail(event.target.value)} />
-          <Field label="Kata sandi" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-          <Button type="submit">Masuk</Button>
+          <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Field label="Kata sandi" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+          <Button type="submit" disabled={login.isPending}>{login.isPending ? "Memeriksa akun…" : "Masuk"}</Button>
           <p className="text-sm text-mist">Belum punya akun? <Link to={`/register?next=${encodeURIComponent(next)}`}>Daftar</Link></p>
         </form>
       </Panel>
@@ -84,12 +91,12 @@ export function Register() {
   })
   return (
     <Shell>
-      <Panel title="Daftar" className="mx-auto max-w-md">
+      <div className="page-heading"><div><h1>Buat akun</h1><p>Satu akun untuk ruang dan pustaka Anda. Gratis.</p></div></div><Panel className="max-w-md">
         <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); register.mutate() }}>
-          <Field label="Nama" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
-          <Field label="Email" value={email} onChange={(event) => setEmail(event.target.value)} />
-          <Field label="Kata sandi" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-          <Button type="submit">Buat akun</Button><p className="text-sm text-mist">Sudah punya akun? <Link to={`/login?next=${encodeURIComponent(next)}`}>Masuk</Link></p>
+          <Field label="Nama" autoComplete="name" required minLength={2} maxLength={40} value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+          <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Field label="Kata sandi" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} />
+          <p className="form-note">Gunakan setidaknya 8 karakter untuk kata sandi.</p><Button type="submit" disabled={register.isPending}>{register.isPending ? "Membuat akun…" : "Buat akun"}</Button><p className="text-sm text-mist">Sudah punya akun? <Link to={`/login?next=${encodeURIComponent(next)}`}>Masuk</Link></p>
         </form>
       </Panel>
     </Shell>
@@ -141,36 +148,29 @@ export function Dashboard() {
   })
   return (
     <Shell>
-      <section className="cinema-hero"><span className="eyebrow">YOUR PEOPLE. YOUR PRIVATE CINEMA.</span><h1>Satu layar.<br />Banyak cerita bersama.</h1><p>Selamat datang, {session.data.user.display_name}. Siapkan film favoritmu, undang teman, dan nikmati setiap adegan di waktu yang sama.</p><div className="mt-6 flex gap-3"><Link to="/rooms/new"><Button>＋ Buat ruang nonton</Button></Link><Link to="/library"><Button tone="ghost">Jelajahi pustaka ↗</Button></Link></div></section>
-      <div className="stat-strip"><article><strong>{rooms.data?.active.length || 0}</strong><span>Ruang aktif</span></article><article><strong>{rooms.data?.history.length || 0}</strong><span>Riwayat ruang</span></article><article><strong>HLS</strong><span>Kualitas adaptif per penonton</span></article></div>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-4xl">Ruang</h1>
-          <p className="mt-1 text-sm text-mist">Buat ruang, pilih yang sudah ada, atau masuk dengan kode.</p>
-        </div>
-        <Link to="/rooms/new"><Button>Buat ruang</Button></Link>
-      </div>
-      <form className="mb-6 flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); void joinRoom() }}>
-        <input className="min-w-48 flex-1 rounded-full border border-line bg-[#1a1a23] px-4 py-2 tracking-[0.2em] uppercase" placeholder="Kode ruang" value={code} onChange={(event) => setCode(event.target.value)} />
+      <div className="dashboard-heading"><div><h1>Ruang nonton Anda</h1><p>Halo, {session.data.user.display_name}. Lanjutkan ruang yang ada atau pilih film untuk ruang baru.</p></div><Link className="button button-primary" to="/rooms/new">Buat ruang</Link></div>
+      <form className="join-code" onSubmit={(event) => { event.preventDefault(); void joinRoom() }}>
+        <label className="field"><span>Punya undangan?</span><input aria-label="Kode ruang" placeholder="Masukkan kode ruang" autoCapitalize="characters" value={code} onChange={(event) => setCode(event.target.value)} /></label>
         <Button type="submit">Gabung</Button>
       </form>
       {rooms.error instanceof Error ? <p className="mb-4 text-sm text-amber">{rooms.error.message}</p> : null}
-      <div className="grid gap-4 md:grid-cols-2">
+      {rooms.isPending ? <p role="status" className="empty-message">Memuat ruang Anda…</p> : null}
+      <div className="room-list">
         {listed.map((room) => (
-          <article key={room.id} className="rounded-3xl border border-line bg-panel p-5">
+          <article key={room.id} className="room-card">
             <Link to={`/rooms/${room.code}`}>
-              <p className="text-xs tracking-[0.2em] text-amber">{room.code}</p>
-              <h2 className="mt-2 font-display text-3xl">{room.title}</h2>
+              <p className="room-code">{room.code}</p>
+              <h2>{room.title}</h2>
               <p className="text-sm text-mist">{room.status === "open" ? "Masih terbuka" : "Ditutup"}</p>
             </Link>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link to={`/rooms/${room.code}`}><Button>{room.status === "open" ? "Masuk ruang" : "Lihat"}</Button></Link>
-              {room.status === "open" ? <Button tone="ghost" onClick={() => mutateRoom(room, "close")}>Tutup</Button> : null}
-              <Button tone="ghost" onClick={() => mutateRoom(room, "delete")}>Hapus</Button>
+            <div className="room-actions">
+              <Link className="button button-ghost" to={`/rooms/${room.code}`}>{room.status === "open" ? "Masuk ruang" : "Lihat"}</Link>
+              {room.host_user_id === session.data?.user?.id && room.status === "open" ? <Button tone="ghost" onClick={() => mutateRoom(room, "close")}>Tutup</Button> : null}
+              {room.host_user_id === session.data?.user?.id ? <Button tone="ghost" onClick={() => mutateRoom(room, "delete")}>Hapus</Button> : null}
             </div>
           </article>
         ))}
-        {listed.length === 0 ? <p className="text-mist">Belum ada ruang. Buat satu untuk malam ini.</p> : null}
+        {!rooms.isPending && !rooms.error && listed.length === 0 ? <p className="empty-message">Belum ada ruang. Buat ruang baru atau masukkan kode undangan teman.</p> : null}
       </div>
     </Shell>
   )
@@ -184,11 +184,23 @@ export function Library() {
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
   const [filter, setFilter] = useState("")
+  const [preview, setPreview] = useState<Media | null>(null)
+  const [params, setParams] = useSearchParams()
+  const uploadOpen = params.get("upload") === "1"
+  const uploadDialog = useRef<HTMLDialogElement>(null)
+  function showUpload(open: boolean) {
+    setParams(previous => { const next = new URLSearchParams(previous); if (open) next.set("upload", "1"); else next.delete("upload"); return next }, { replace: !open })
+  }
+  useEffect(() => {
+    if (uploadOpen && !uploadDialog.current?.open) uploadDialog.current?.showModal()
+    else if (!uploadOpen && uploadDialog.current?.open) uploadDialog.current.close()
+  }, [uploadOpen])
   useEffect(() => { const timer = window.setTimeout(() => { setSearch(q); setPage(1) }, 300); return () => window.clearTimeout(timer) }, [q])
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const media = useQuery({
     queryKey: ["media", search, page, filter],
+    refetchInterval: query => query.state.data?.items.some(item => ["pending", "queued", "probing", "processing", "uploading"].includes(item.status)) ? 4000 : false,
     queryFn: () => api<{ items: Media[]; total: number; per_page: number }>(`/api/v1/media?q=${encodeURIComponent(search)}&page=${page}&status=${filter}`),
     enabled: Boolean(session.data?.user),
   })
@@ -216,30 +228,32 @@ export function Library() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-display text-4xl">Pustaka</h1>
         <div className="flex flex-wrap items-center gap-3">
-          <input className="rounded-full border border-line bg-[#1a1a23] px-4 py-2" placeholder="Cari judul" value={q} onChange={(event) => setQ(event.target.value)} />
+          <label className="field"><span>Cari judul</span><input placeholder="Cari judul" value={q} onChange={(event) => setQ(event.target.value)} /></label>
           <select aria-label="Filter status film" className="rounded-xl border p-2" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1) }}><option value="">Semua status</option><option value="ready">Siap ditonton</option><option value="processing">Sedang diolah</option><option value="failed">Gagal</option></select>
-          <Link to="/upload"><Button>Tambah film</Button></Link>
+          <Button onClick={() => showUpload(true)}>Tambah film</Button>
         </div>
       </div>
       {!session.data?.user ? <p className="text-mist">Masuk dulu untuk melihat dan mengelola film.</p> : null}
       {media.error instanceof Error ? <p className="mb-4 text-sm text-amber">{media.error.message}</p> : null}
       {media.isLoading ? <p className="py-8 text-mist">Memuat pustaka film…</p> : null}
-      {media.data?.items.length === 0 ? <Panel title="Belum ada film yang cocok"><p className="text-sm text-mist">Ubah pencarian, atau unggah film pertamamu lewat Upload Studio.</p></Panel> : null}
-      <div className="grid gap-4 md:grid-cols-3">
+      {media.data?.items.length === 0 ? <Panel title="Belum ada film yang cocok"><p className="text-sm text-mist">Ubah pencarian, atau gunakan Tambah film untuk mengisi pustaka.</p></Panel> : null}
+      <div className="library-grid">
         {(media.data?.items || []).map((item) => {
           const mine = item.owner_id === userId || session.data?.user?.role === "admin"
           return (
-            <article key={item.id} className="media-card overflow-hidden rounded-2xl border border-line bg-panel">
-              <div className="film-art"><small>{item.provider === "youtube" ? "YOUTUBE ORIGINAL PLAYER" : "PRIVATE SCREENING · HLS"}</small></div>
-              <div className="space-y-3 p-4">
+            <article key={item.id} className="media-card">
+              <p className="media-format">{item.provider === "youtube" ? "Player YouTube" : "Video unggahan"}</p>
+              <div>
                 {editing === item.id ? (
-                  <input className="w-full rounded-xl border border-line bg-[#1a1a23] px-3 py-2" value={draft} onChange={(event) => setDraft(event.target.value)} />
+                  <Field label="Judul film" value={draft} onChange={(event) => setDraft(event.target.value)} />
                 ) : (
                   <h2 className="font-display text-2xl">{item.title}</h2>
                 )}
-                <p className="text-sm text-mist">{item.status} · {item.provider}</p>
+                <p className="media-meta">{({ pending: "Unggahan belum selesai", ready: "Siap ditonton", processing: "Sedang diolah", probing: "Memeriksa video", queued: "Dalam antrean", uploading: "Sedang diunggah", failed: "Pengolahan gagal" } as Record<string, string>)[item.status] || item.status}{item.duration_ms ? ` · ${Math.floor(item.duration_ms / 60000)} menit` : ""}</p>
+                <Button tone="ghost" className="mt-4" disabled={item.status !== "ready"} onClick={() => setPreview(item)}>Pratinjau</Button>
+                {item.status !== "ready" ? <p className="form-note mt-2">Pratinjau tersedia setelah film selesai diolah.</p> : null}
                 {mine ? (
-                  <div className="flex gap-2">
+                  <div className="media-actions">
                     {editing === item.id ? (
                       <Button onClick={() => save(item)}>Simpan</Button>
                     ) : (
@@ -254,11 +268,13 @@ export function Library() {
         })}
       </div>
       {media.data && media.data.total > media.data.per_page ? <div className="mt-6 flex items-center justify-center gap-4"><Button tone="ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>← Sebelumnya</Button><span className="text-sm text-mist">{page} / {Math.ceil(media.data.total / media.data.per_page)}</span><Button tone="ghost" disabled={page * media.data.per_page >= media.data.total} onClick={() => setPage(page + 1)}>Berikutnya →</Button></div> : null}
+      <dialog ref={uploadDialog} className="media-dialog" aria-labelledby="upload-title" onClose={() => { if (uploadOpen) showUpload(false) }}><header className="modal-heading"><div><h2 id="upload-title">Tambah film</h2><p>Film akan masuk ke pustaka Anda.</p></div><button className="secondary-button" onClick={() => showUpload(false)}>Tutup</button></header>{uploadOpen ? <UploadForm /> : null}</dialog>
+      {preview ? <Suspense fallback={<p role="status">Menyiapkan pratinjau…</p>}><MediaPreview media={preview} onClose={() => setPreview(null)} /></Suspense> : null}
     </Shell>
   )
 }
 
-export function UploadStudio() {
+function UploadForm() {
   const push = useToasts((state) => state.push)
   const client = useQueryClient()
   const session = useSession()
@@ -270,15 +286,10 @@ export function UploadStudio() {
   const uploadAbortRef = useRef<AbortController | null>(null)
   const uploadSessionRef = useRef<string | null>(null)
   const [resumeHint, setResumeHint] = useState(false)
+  const [source, setSource] = useState("file")
   const resumeKey = `nobarsync-upload:${session.data?.user?.id || "anonymous"}`
   useEffect(() => { setResumeHint(Boolean(localStorage.getItem(resumeKey))) }, [resumeKey])
   useEffect(() => () => uploadAbortRef.current?.abort(), [])
-  const films = useQuery({
-    refetchInterval: (query) => query.state.data?.items.some((item) => ["queued", "probing", "processing", "uploading"].includes(item.status)) ? 4000 : false,
-    queryKey: ["media", "studio"],
-    queryFn: () => api<{ items: Media[] }>("/api/v1/media"),
-    enabled: Boolean(session.data?.user),
-  })
   async function upload(chosen: File) {
     type Resume = { id: string; partSize: number; fingerprint: string; parts: { part_number: number; etag: string }[] }
     const fingerprint = `${chosen.name}:${chosen.size}:${chosen.lastModified}`
@@ -329,9 +340,10 @@ export function UploadStudio() {
     await client.invalidateQueries({ queryKey: ["media"] })
   }
   return (
-    <Shell>
-      <Panel title="Upload studio" subtitle="Unggah sekali, tonton bersama dalam kualitas adaptif." className="max-w-3xl">
-        <form className="space-y-3" onSubmit={(event) => {
+    <div className="upload-form">
+      <fieldset className="source-picker"><legend>Sumber film</legend>{[{id:"file",label:"Berkas video"},{id:"youtube",label:"YouTube"},{id:"url",label:"URL langsung"}].map(item => <label key={item.id}><input type="radio" name="upload-source" checked={source===item.id} disabled={busy} onChange={() => setSource(item.id)} />{item.label}</label>)}</fieldset>
+      <Field label={source === "file" ? "Judul" : "Judul (opsional)"} value={title} onChange={event => setTitle(event.target.value)} />
+      {source === "file" ? <form className="space-y-3 mt-5" onSubmit={(event) => {
           event.preventDefault()
           if (!title.trim() || !file) {
             push("Isi judul dan pilih berkas dulu.")
@@ -349,8 +361,7 @@ export function UploadStudio() {
             .finally(() => setBusy(false))
         }}>
           {resumeHint ? <p className="rounded-xl border border-amber/30 bg-amber/10 p-3 text-sm">Unggahan tertunda tersimpan. Pilih berkas yang sama untuk melanjutkan bagian yang belum terkirim.</p> : null}
-          <Field label="Judul" value={title} onChange={(event) => setTitle(event.target.value)} />
-          <label className="inline-flex cursor-pointer items-center rounded-full border border-line bg-[#1a1a23] px-4 py-2 text-sm font-semibold">
+          <label className="button button-ghost">
             Pilih berkas
             <input key={fileKey} className="sr-only" type="file" accept="video/mp4,video/webm,video/quicktime,.mkv" onChange={(event) => setFile(event.target.files?.[0] || null)} />
           </label>
@@ -366,8 +377,8 @@ export function UploadStudio() {
               <p className="mt-2 text-sm text-mist">{Math.min(100, Math.round((loaded / file.size) * 100))}% · {formatBytes(loaded)} dari {formatBytes(file.size)}</p>
             </div>
           ) : <p className="text-sm text-mist">Berkas dikirim langsung ke penyimpanan. Film besar menampilkan progres per bagian.</p>}
-        </form>
-        <form className="mt-6 space-y-3" onSubmit={(event) => {
+          <p className="form-note">Menutup modal menjeda unggahan. Pilih berkas yang sama untuk melanjutkan nanti.</p>
+        </form> : source === "youtube" ? <form className="mt-5 space-y-3" onSubmit={(event) => {
           event.preventDefault()
           const url = String(new FormData(event.currentTarget).get("url") || "").trim()
           if (!url) {
@@ -382,30 +393,16 @@ export function UploadStudio() {
             .catch((error: Error) => push(error.message))
         }}>
           <Field label="URL YouTube" name="url" placeholder="https://www.youtube.com/watch?v=..." />
-          <Button type="submit" tone="ghost">Tambah embed</Button>
-        </form>
-        <form className="mt-6 space-y-3 border-t border-line pt-5" onSubmit={(event) => { event.preventDefault(); const url = String(new FormData(event.currentTarget).get("source_url") || "").trim(); if (!url) return; void api("/api/v1/media/import-url", { method: "POST", body: JSON.stringify({ url, title: title || "Impor video" }) }).then(() => { push("Impor masuk antrean pengolahan"); void client.invalidateQueries({ queryKey: ["media"] }) }).catch((error: Error) => push(error.message)) }}><Field label="Impor URL video langsung" name="source_url" type="url" required placeholder="https://domain-diizinkan/video.mp4" /><p className="text-xs text-mist">Gunakan domain yang diizinkan di konfigurasi server. Tautan YouTube memakai player resmi di atas.</p><Button type="submit" tone="ghost">Impor video</Button></form>
-        <div className="mt-6 border-t border-line pt-4">
-          <h3 className="font-display text-xl">Film kamu</h3>
-          <ul className="mt-3 space-y-2">
-            {(films.data?.items || []).map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-3 text-sm">
-                <span>{item.title}</span>
-                <span className="text-mist">{item.status}</span>
-              </li>
-            ))}
-            {films.data && films.data.items.length === 0 ? <li className="text-sm text-mist">Belum ada film.</li> : null}
-          </ul>
-        </div>
-      </Panel>
-    </Shell>
+          <Button type="submit">Tambahkan YouTube</Button>
+        </form> : <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); const url = String(new FormData(event.currentTarget).get("source_url") || "").trim(); if (!url) return; void api("/api/v1/media/import-url", { method: "POST", body: JSON.stringify({ url, title: title || "Impor video" }) }).then(() => { push("Impor masuk antrean pengolahan"); void client.invalidateQueries({ queryKey: ["media"] }) }).catch((error: Error) => push(error.message)) }}><Field label="URL video langsung" name="source_url" type="url" required placeholder="https://domain-diizinkan/video.mp4" /><p className="form-note">Gunakan domain yang diizinkan pengelola. Untuk YouTube, pilih sumber YouTube.</p><Button type="submit">Impor video</Button></form>}
+    </div>
   )
 }
 
 export function CreateRoom() {
   const navigate = useNavigate()
   const push = useToasts((state) => state.push)
-  const [title, setTitle] = useState("Nobar malam ini")
+  const [title, setTitle] = useState("Manonton malam ini")
   const [visibility, setVisibility] = useState("public")
   const [mediaId, setMediaId] = useState("")
   const media = useQuery({
@@ -420,7 +417,7 @@ export function CreateRoom() {
   })
   return (
     <Shell>
-      <Panel title="Buat ruang" className="max-w-xl">
+      <div className="page-heading"><div><h1>Buat ruang</h1><p>Pilih film dan tentukan siapa yang bisa bergabung.</p></div></div><Panel className="max-w-xl">
         <form className="space-y-3" onSubmit={(event) => {
           event.preventDefault()
           if (!mediaId) {
@@ -431,13 +428,13 @@ export function CreateRoom() {
         }}>
           <Field label="Judul" value={title} onChange={(event) => setTitle(event.target.value)} />
           <label className="block text-sm text-mist">Film
-            <select className="mt-1 w-full rounded-xl border border-line bg-[#1a1a23] px-3 py-2" value={mediaId} onChange={(event) => setMediaId(event.target.value)}>
+            <select className="mt-1 w-full" value={mediaId} onChange={(event) => setMediaId(event.target.value)}>
               <option value="">Pilih satu film</option>
               {films.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select>
           </label>
           <label className="block text-sm text-mist">Visibilitas
-            <select className="mt-1 w-full rounded-xl border border-line bg-[#1a1a23] px-3 py-2" value={visibility} onChange={(event) => setVisibility(event.target.value)}>
+            <select className="mt-1 w-full" value={visibility} onChange={(event) => setVisibility(event.target.value)}>
               <option value="public">Publik</option>
               <option value="private">Privat</option>
               <option value="password">Kata sandi</option>
@@ -465,7 +462,7 @@ export function Join() {
   }
   return (
     <Shell>
-      <Panel title="Gabung ruang" className="max-w-md">
+      <div className="page-heading"><div><h1>Gabung ruang</h1><p>Masukkan kode dari teman untuk bergabung dengan akun Anda.</p></div></div><Panel className="max-w-md">
         <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void submit() }}>
           <Field label="Kode" value={code} onChange={(event) => setCode(event.target.value)} />
           <p className="text-sm text-mist">Anda bergabung menggunakan akun yang sedang login.</p>
@@ -531,7 +528,7 @@ export function Lobby() {
   }
   return (
     <Shell>
-      <Panel title={room.data.room.title}>
+      <div className="page-heading"><div><h1>{room.data.room.title}</h1><p>Kode ruang: {room.data.room.code}</p></div></div><Panel title="Pengaturan ruang">
         <p className="text-sm text-mist">{host ? "Bagikan kode ini, tunggu teman, lalu masuk." : "Tekan Masuk untuk ikut nonton."}</p>
         <p className="mt-1 font-display text-4xl tracking-[0.25em] text-amber">{room.data.room.code}</p>
         <p className="mt-1 text-sm text-mist">{room.data.room.status === "open" ? "Terbuka" : "Ditutup"} · {room.data.room.locked ? "dikunci" : "terbuka untuk anggota"}</p>
@@ -547,7 +544,7 @@ export function Lobby() {
           ))}
         </ul>
         <div className="flex flex-wrap gap-2">
-          {room.data.room.status === "open" ? <Link to={`/watch/${room.data.room.code}`}><Button>Masuk</Button></Link> : null}
+          {room.data.room.status === "open" ? <Link className="button button-primary" to={`/watch/${room.data.room.code}`}>Masuk pemutar</Link> : null}
           <Button tone="ghost" onClick={() => run(`/api/v1/rooms/${code}/leave`, "POST", {}).then((ok) => { if (ok) navigate("/dashboard") })}>Keluar</Button>
         </div>
         {host ? <div className="mt-6 grid gap-5 border-t border-line pt-6 md:grid-cols-2"><div><h3 className="mb-3 text-lg font-semibold">Program malam ini</h3><p className="mb-3 text-xs text-mist">Pilih film yang sudah siap, atau susun antrean untuk ditonton berikutnya.</p><div className="max-h-72 space-y-2 overflow-auto">{(media.data?.items || []).map((item) => <div className="flex items-center gap-2 rounded-xl border border-line p-3" key={item.id}><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{item.title}</strong><small className="text-mist">{item.status}</small></div><Button tone="ghost" disabled={item.status !== "ready"} onClick={() => run(`/api/v1/rooms/${code}/media`, "POST", { media_id: item.id })}>Pilih</Button><Button tone="ghost" disabled={item.status !== "ready"} onClick={() => run(`/api/v1/rooms/${code}/playlist`, "POST", { media_id: item.id }).then((ok) => { if (ok) push("Film ditambahkan ke antrean") })}>＋</Button></div>)}</div></div><form className="space-y-3" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void run(`/api/v1/rooms/${code}/settings`, "PATCH", { buffering_mode: data.get("buffering_mode"), chat_permission: data.get("chat_permission") }) }}><h3 className="text-lg font-semibold">Kenyamanan ruang</h3><label className="block text-sm">Jika penonton buffering<select name="buffering_mode" defaultValue={room.data.room.buffering_mode} className="mt-2 block w-full rounded-xl border p-3"><option value="independent">Tetap berjalan untuk penonton lain</option><option value="pause_all">Jeda saat banyak penonton buffering</option><option value="host_decides">Host menentukan</option></select></label><label className="block text-sm">Izin obrolan<select name="chat_permission" defaultValue={room.data.room.chat_permission} className="mt-2 block w-full rounded-xl border p-3"><option value="everyone">Semua peserta</option><option value="host_mod">Host dan moderator</option><option value="off">Nonaktif</option></select></label><Button type="submit">Simpan pengaturan</Button></form></div> : null}
@@ -584,7 +581,44 @@ export function Profile() {
   const [busy, setBusy] = useState(false)
   if (session.isLoading) return <Shell><p>Memuat profil…</p></Shell>
   if (!session.data?.user) return <Navigate to="/login" />
-  return <Shell><section className="cinema-hero"><span className="eyebrow">YOUR CINEMA IDENTITY</span><h1>Halo, {session.data.user.display_name}.</h1><p>{session.data.user.email}</p></section><div className="grid gap-5 md:grid-cols-2"><Panel title="Profil penonton"><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); setBusy(true); void api("/api/v1/auth/me", { method: "PATCH", body: JSON.stringify({ display_name: name || session.data?.user?.display_name }) }).then(() => { push("Profil diperbarui"); return client.invalidateQueries({ queryKey: ["me"] }) }).catch((error: Error) => push(error.message)).finally(() => setBusy(false)) }}><Field label="Nama tampilan" minLength={2} maxLength={40} placeholder={session.data.user.display_name} value={name} onChange={(event) => setName(event.target.value)} /><Button disabled={busy}>Simpan profil</Button></form><form className="mt-6 space-y-3 border-t border-line pt-5" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); void api("/api/v1/auth/avatar", { method: "POST", body: data }).then(() => push("Avatar diperbarui")).catch((error: Error) => push(error.message)).finally(() => setBusy(false)) }}><label className="block text-sm text-mist">Avatar · JPG, PNG, WebP, maksimal 1 MB<input className="mt-3 block w-full text-sm" name="file" type="file" accept="image/jpeg,image/png,image/webp" required /></label><Button tone="ghost" disabled={busy}>Unggah avatar</Button></form></Panel><Panel title="Keamanan akun"><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); if (data.get("new_password") !== data.get("confirmation")) { push("Konfirmasi kata sandi tidak cocok"); return }; setBusy(true); void api("/api/v1/auth/password", { method: "POST", body: JSON.stringify({ old_password: data.get("old_password"), new_password: data.get("new_password") }) }).then(() => { push("Kata sandi diperbarui"); form.reset() }).catch((error: Error) => push(error.message)).finally(() => setBusy(false)) }}><Field label="Kata sandi lama" type="password" name="old_password" autoComplete="current-password" required /><Field label="Kata sandi baru" type="password" name="new_password" autoComplete="new-password" minLength={8} maxLength={72} required /><Field label="Konfirmasi kata sandi baru" type="password" name="confirmation" autoComplete="new-password" required /><Button disabled={busy}>Ubah kata sandi</Button></form><Button tone="danger" className="mt-6" onClick={() => void api("/api/v1/auth/logout", { method: "POST" }).then(() => { client.clear(); navigate("/login") }).catch((error: Error) => push(error.message))}>Keluar dari akun</Button></Panel></div></Shell>
+  return <Shell>
+    <div className="page-heading"><div><h1>Akun Anda</h1><p>{session.data.user.email}</p></div></div>
+    <div className="grid gap-6 md:grid-cols-2">
+      <Panel title="Profil penonton">
+        <form className="space-y-4" onSubmit={event => {
+          event.preventDefault(); setBusy(true)
+          void api("/api/v1/auth/me", { method: "PATCH", body: JSON.stringify({ display_name: name || session.data?.user?.display_name }) })
+            .then(() => { push("Profil diperbarui"); return client.invalidateQueries({ queryKey: ["me"] }) })
+            .catch((error: Error) => push(error.message)).finally(() => setBusy(false))
+        }}>
+          <Field label="Nama tampilan" minLength={2} maxLength={40} placeholder={session.data.user.display_name} value={name} onChange={event => setName(event.target.value)} />
+          <Button type="submit" disabled={busy}>Simpan profil</Button>
+        </form>
+        <form className="mt-6 space-y-3 border-t border-line pt-5" onSubmit={event => {
+          event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true)
+          void api("/api/v1/auth/avatar", { method: "POST", body: data }).then(() => push("Avatar diperbarui")).catch((error: Error) => push(error.message)).finally(() => setBusy(false))
+        }}>
+          <label className="field"><span>Avatar (JPG, PNG, WebP, maksimal 1 MB)</span><input name="file" type="file" accept="image/jpeg,image/png,image/webp" required /></label>
+          <Button type="submit" tone="ghost" disabled={busy}>Unggah avatar</Button>
+        </form>
+      </Panel>
+      <Panel title="Keamanan akun">
+        <form className="space-y-4" onSubmit={event => {
+          event.preventDefault(); const form = event.currentTarget; const data = new FormData(form)
+          if (data.get("new_password") !== data.get("confirmation")) { push("Konfirmasi kata sandi tidak cocok"); return }
+          setBusy(true)
+          void api("/api/v1/auth/password", { method: "POST", body: JSON.stringify({ old_password: data.get("old_password"), new_password: data.get("new_password") }) })
+            .then(() => { push("Kata sandi diperbarui"); form.reset() }).catch((error: Error) => push(error.message)).finally(() => setBusy(false))
+        }}>
+          <Field label="Kata sandi lama" type="password" name="old_password" autoComplete="current-password" required />
+          <Field label="Kata sandi baru" type="password" name="new_password" autoComplete="new-password" minLength={8} maxLength={72} required />
+          <Field label="Konfirmasi kata sandi baru" type="password" name="confirmation" autoComplete="new-password" required />
+          <Button type="submit" disabled={busy}>Ubah kata sandi</Button>
+        </form>
+        <Button tone="danger" className="mt-6" onClick={() => void api("/api/v1/auth/logout", { method: "POST" }).then(() => { client.clear(); navigate("/login") }).catch((error: Error) => push(error.message))}>Keluar dari akun</Button>
+      </Panel>
+    </div>
+  </Shell>
 }
 
 function putPart(url: string, body: Blob, onProgress: (loaded: number) => void, signal?: AbortSignal) {
@@ -626,9 +660,7 @@ function formatBytes(value: number) {
 export function Admin() {
   const session = useSession()
   const enabled = session.data?.user?.role === "admin"
-  const metrics = useQuery({ queryKey: ["admin", "metrics"], queryFn: () => api<{ counts: Record<string, number> }>("/api/v1/admin/metrics"), enabled })
-  const jobs = useQuery({ queryKey: ["admin", "jobs"], queryFn: () => api<{ jobs: { id: number; state: string; queue: string; attempt: number }[] }>("/api/v1/admin/jobs"), enabled, refetchInterval: 10_000 })
   if (session.isLoading) return <Shell><p>Memuat…</p></Shell>
   if (!enabled) return <Navigate to="/dashboard" />
-  return <Shell><h1 className="mb-6 text-4xl font-semibold">Pusat kendali</h1>{metrics.error instanceof Error ? <p role="alert">{metrics.error.message}</p> : null}<div className="stat-strip">{Object.entries(metrics.data?.counts || {}).map(([key, value]) => <article key={key}><strong>{value}</strong><span>{{ users: "Pengguna", media: "Film", ready_media: "Film siap", open_rooms: "Ruang aktif" }[key] || key}</span></article>)}</div><Panel title="Antrean pengolahan media" subtitle="Diperbarui setiap 10 detik"><div className="overflow-auto"><table className="w-full text-left text-sm"><thead><tr className="text-mist"><th className="p-3">Job</th><th>Antrean</th><th>Status</th><th>Percobaan</th></tr></thead><tbody>{jobs.data?.jobs.map((job) => <tr className="border-t border-line" key={job.id}><td className="p-3">#{job.id}</td><td>{job.queue}</td><td>{job.state}</td><td>{job.attempt}</td></tr>)}</tbody></table></div>{jobs.error instanceof Error ? <p role="alert">{jobs.error.message}</p> : null}</Panel></Shell>
+  return <Shell>{session.data?.user ? <AdminConsole me={session.data.user.id} /> : null}</Shell>
 }

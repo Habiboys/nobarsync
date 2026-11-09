@@ -12,6 +12,7 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   const alive = useRef(true)
   const holdingRef = useRef(false)
   const remoteRef = useRef(false)
+  const holdTimer = useRef(0)
   const onSpeechDuckRef = useRef(onSpeechDuck)
   const endTalkRef = useRef<() => void>(() => {})
   const [state, setState] = useState("idle")
@@ -24,11 +25,13 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   const [device, setDevice] = useState("")
   onSpeechDuckRef.current = onSpeechDuck
   useEffect(() => {
+    alive.current = true
     const refresh = () => { void navigator.mediaDevices?.enumerateDevices().then(items => setDevices(items.filter(d => d.kind === "audioinput"))).catch(() => {}) }
     refresh()
     navigator.mediaDevices?.addEventListener("devicechange", refresh)
     return () => {
       alive.current = false
+      window.clearTimeout(holdTimer.current)
       holdingRef.current = false
       remoteRef.current = false
       session.current?.close()
@@ -56,8 +59,14 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
     setHolding(true)
     applyDuck()
     session.current?.transmit(true)
+    window.clearTimeout(holdTimer.current)
+    holdTimer.current = window.setTimeout(() => {
+      endTalkRef.current()
+      setMessage("Mikrofon ditutup otomatis setelah 60 detik. Tahan lagi untuk melanjutkan.")
+    }, 60000)
   }
   function endTalk() {
+    window.clearTimeout(holdTimer.current)
     if (!holdingRef.current) return
     holdingRef.current = false
     setHolding(false)
@@ -66,6 +75,7 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   }
   endTalkRef.current = endTalk
   function resetTalk() {
+    window.clearTimeout(holdTimer.current)
     holdingRef.current = false
     remoteRef.current = false
     setHolding(false)
@@ -106,7 +116,7 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   function leave() { session.current?.close(); session.current = null; setState("idle"); setPeers([]); setMessage(""); resetTalk() }
   const speaking = holding || remoteSpeech
   const talk = state === "active" && dock ? createPortal(
-    <button type="button" className="talk-button" aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "BICARA" : "MIC"}</button>,
+    <button type="button" className="talk-button" aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onBlur={endTalk} onPointerLeave={endTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "BICARA" : "MIC"}</button>,
     dock,
   ) : null
   return <>
