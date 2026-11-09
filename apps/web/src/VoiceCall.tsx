@@ -125,14 +125,9 @@ export function VoiceCall({ code, roomConnected, dock, joinDock, fullscreen, sho
   function leave() { session.current?.close(); session.current = null; setState("idle"); setPeers([]); setMessage(""); resetTalk() }
   const speaking = holding || remoteSpeech
   const talkButton = <button type="button" className="talk-button" aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "BICARA" : "MIC"}</button>
-  const talk = showMic && dock && state === "active" ? createPortal(talkButton, dock) : null
-  const joinMic = showMic && joinDock && fullscreen && state !== "active" ? createPortal(
-    <>
-      <button type="button" className="control-icon control-text" disabled={!roomConnected || state === "joining"} aria-label="Gabung mikrofon" onClick={() => void join()}>{state === "joining" ? "…" : "Gabung"}</button>
-      {message ? <span className="fs-mic-note" role="status">{message}</span> : null}
-    </>,
-    joinDock,
-  ) : null
+  const connectButton = <button type="button" className="talk-button talk-idle" disabled={!roomConnected || state === "joining"} aria-label="Hubungkan mikrofon untuk bicara" onClick={() => void join()}>{state === "joining" ? "…" : "MIC"}</button>
+  const talk = showMic && dock ? createPortal(state === "active" ? talkButton : connectButton, dock) : null
+  const joinMic = fullscreen && joinDock && message ? createPortal(<span className="fs-mic-note" role="status">{message}</span>, joinDock) : null
   return <>
     {talk}
     {joinMic}

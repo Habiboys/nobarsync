@@ -75,6 +75,7 @@ function WatchSession({ code }: { code: string }) {
   const [subtitle, setSubtitle] = useState("")
   const [theater, setTheater] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [controlsIdle, setControlsIdle] = useState(false)
   const [micOpen, setMicOpen] = useState(true)
   const [micSlot, setMicSlot] = useState<HTMLSpanElement | null>(null)
   const [position, setPosition] = useState(0)
@@ -516,6 +517,30 @@ function WatchSession({ code }: { code: string }) {
     } catch { setStatus(active ? "Tidak bisa mengecilkan layar" : "Layar penuh ditolak browser") }
   }
   useEffect(() => {
+    const frame = playerNode
+    if (!fullscreen || chatOpen || !frame) { setControlsIdle(false); return }
+    let timer = 0
+    const wake = () => {
+      setControlsIdle(false)
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        // Keep controls up while the pointer or keyboard focus is on them.
+        if (frame.querySelector(".player-controls:hover, .player-controls :focus-visible")) return
+        setControlsIdle(true)
+      }, 2500)
+    }
+    wake()
+    frame.addEventListener("pointermove", wake)
+    frame.addEventListener("pointerdown", wake)
+    frame.addEventListener("keydown", wake)
+    return () => {
+      window.clearTimeout(timer)
+      frame.removeEventListener("pointermove", wake)
+      frame.removeEventListener("pointerdown", wake)
+      frame.removeEventListener("keydown", wake)
+    }
+  }, [fullscreen, chatOpen, playerNode])
+  useEffect(() => {
     const sync = () => setFullscreen(activeFullscreen() === frameRef.current)
     document.addEventListener("fullscreenchange", sync)
     document.addEventListener("webkitfullscreenchange", sync)
@@ -592,7 +617,7 @@ function WatchSession({ code }: { code: string }) {
       <header className="watch-header"><Brand /><div><Badge tone={connected ? "green" : "amber"}>{connected ? "Terhubung" : "Menghubungkan"}</Badge><ThemeToggle /><Link to={`/rooms/${code}`} className="secondary-button">Kelola ruang</Link></div></header>
       <div className={`watch-grid ${!chatOpen ? "chat-collapsed" : ""}`}>
         <section className="min-w-0">
-          <div ref={(node) => { frameRef.current = node; setPlayerNode((current) => current === node ? current : node) }} className={`cinema-player${fullscreen && chatOpen ? " with-chat" : ""}`}>
+          <div ref={(node) => { frameRef.current = node; setPlayerNode((current) => current === node ? current : node) }} className={`cinema-player${fullscreen && chatOpen ? " with-chat" : ""}${controlsIdle ? " controls-idle" : ""}`}>
             <video ref={videoRef} className={isYoutube ? "hidden" : "aspect-video w-full"} playsInline crossOrigin="use-credentials" preload="auto" poster={playback?.poster_key ? `/media/t/${playback.token}/${playback.poster_key}` : undefined}
               onWaiting={reportWaiting} onSeeking={() => setLoading(true)} onCanPlay={() => { setLoading(false); signal(false); tickRef.current() }} onPlaying={() => { setLoading(false); setBlocked(false); signal(false) }} onEnded={() => { if (canControl) command("playback.pause", { position_ms: Math.round(duration) }) }}>
               {playback?.subtitles?.map((sub) => <track key={sub.language} kind="subtitles" srcLang={sub.language} label={sub.label} src={`/media/t/${playback.token}/${sub.vtt_key}`} />)}
@@ -619,8 +644,8 @@ function WatchSession({ code }: { code: string }) {
                 <button type="button" className="control-icon control-text" aria-pressed={chatOpen} aria-label={chatOpen ? "Sembunyikan chat" : "Tampilkan chat"} onClick={() => setChatOpen((open) => !open)}>Chat</button>
                 {fullscreen || !micOpen ? <button type="button" className="control-icon control-text" aria-pressed={micOpen} aria-label={micOpen ? "Sembunyikan mic" : "Tampilkan mic"} onClick={() => setMicOpen((open) => !open)}>Mic</button> : null}
                 <span ref={setMicSlot} className="mic-slot" />
-                <button type="button" className="control-icon" aria-label="Mode teater" onClick={() => setTheater(!theater)}>▭</button>
-                <button type="button" className="control-icon control-text" aria-pressed={fullscreen} aria-label={fullscreen ? "Kecilkan" : "Layar penuh"} onClick={() => toggleFullscreen()}>{fullscreen ? "Kecil" : "⛶"}</button>
+                {fullscreen ? null : <button type="button" className="control-icon" aria-label="Mode teater" onClick={() => setTheater(!theater)}>▭</button>}
+                <button type="button" className="control-icon" aria-pressed={fullscreen} aria-label={fullscreen ? "Keluar layar penuh" : "Layar penuh"} onClick={() => toggleFullscreen()}>⛶</button>
               </div>
             </div>
           </div>

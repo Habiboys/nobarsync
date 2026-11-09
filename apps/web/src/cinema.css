@@ -138,8 +138,14 @@
 .talk-button { position: absolute; z-index: 6; right: 14px; bottom: 108px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid #e0e5dd; background: #172018; color: #fff; font-size: .75rem; font-weight: 600; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .talk-button:hover { background: #2b3a2d; }
 .talk-button[aria-pressed="true"] { background: #ad3c25; border-color: #ffc4ac; }
+.talk-button.talk-idle { border-style: dashed; }
+.talk-button:disabled { opacity: .6; }
+.cinema-player.controls-idle { cursor: none; }
+.cinema-player .player-controls, .cinema-player .player-topline { transition: opacity .2s; }
+.cinema-player.controls-idle .player-controls, .cinema-player.controls-idle .player-topline { opacity: 0; pointer-events: none; }
 .talk-button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 .cinema-player:fullscreen .talk-button { z-index: 9; right: 20px; bottom: 140px; }
+.cinema-player.controls-idle .talk-button { bottom: 24px; }
 .cinema-player:fullscreen.with-chat .talk-button { right: 24px; bottom: 200px; }
 .voice-panel select { max-width: min(100%, 240px); margin-left: 8px; }
 .voice-person { border: 1px solid var(--color-line); border-radius: 4px; padding: 7px 10px; font-size: .8rem; }
