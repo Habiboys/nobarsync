@@ -27,6 +27,8 @@ export class VoiceSession {
   private output?: GainNode
   private microphone?: MediaStreamAudioSourceNode
   private capture?: AudioWorkletNode
+  private boost?: GainNode
+  private leveler?: DynamicsCompressorNode
   private silent?: GainNode
   private peers = new Map<string, Playback>()
   private presence: Presence = {}
@@ -66,7 +68,7 @@ export class VoiceSession {
     this.output.gain.value = this.volume
     // Boosted call volume above 100% must not clip into distortion.
     const limiter = context.createDynamicsCompressor()
-    limiter.threshold.value = -6
+    limiter.threshold.value = -3
     limiter.knee.value = 6
     limiter.ratio.value = 12
     this.output.connect(limiter).connect(context.destination)
@@ -111,11 +113,25 @@ export class VoiceSession {
     this.capture = new AudioWorkletNode(context, "nobarsync-voice-capture", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 })
     this.silent = context.createGain()
     this.silent.gain.value = 0
-    this.microphone.connect(this.capture)
+    // Speech sits far below mastered film audio; lift it before 8-bit mu-law
+    // so the call is loud without the listener boosting quantization noise.
+    this.boost = context.createGain()
+    this.boost.gain.value = 3
+    this.leveler = context.createDynamicsCompressor()
+    this.leveler.threshold.value = -20
+    this.leveler.knee.value = 10
+    this.leveler.ratio.value = 6
+    this.leveler.attack.value = 0.005
+    this.leveler.release.value = 0.15
+    this.microphone.connect(this.boost)
+    this.boost.connect(this.leveler).connect(this.capture)
     this.capture.connect(this.silent).connect(context.destination)
     this.capture.port.onmessage = event => this.send(event.data as ArrayBuffer)
+    let paused = false
     context.onstatechange = () => {
-      if (!this.closed && context.state === "suspended") this.notice("Audio dijeda browser. Tekan Aktifkan suara call untuk melanjutkan.")
+      if (this.closed) return
+      if (context.state === "suspended") { paused = true; this.notice("Audio call dijeda browser. Ketuk di mana saja pada halaman untuk melanjutkan.") }
+      else if (context.state === "running" && paused) { paused = false; this.notice("") }
     }
     this.statsTimer = window.setInterval(() => this.publish(), 1000)
   }
@@ -198,16 +214,16 @@ export class VoiceSession {
   }
   async setDevice(deviceId: string) {
     const context = this.context
-    if (this.closed || !context || !this.capture) return
+    if (this.closed || !context || !this.boost) return
     const stream = await navigator.mediaDevices.getUserMedia(micConstraints(deviceId))
-    if (this.closed || !this.capture) { stream.getTracks().forEach(track => track.stop()); return }
+    if (this.closed || !this.boost) { stream.getTracks().forEach(track => track.stop()); return }
     const previous = this.stream
     this.stream = stream
     this.armMic(!this.muted)
     stream.getAudioTracks()[0].onended = () => this.fail("Mikrofon terputus. Pilih perangkat dan gabung lagi.")
     this.microphone?.disconnect()
     this.microphone = context.createMediaStreamSource(stream)
-    this.microphone.connect(this.capture)
+    this.microphone.connect(this.boost)
     previous?.getTracks().forEach(track => { track.onended = null; track.stop() })
   }
   setVolume(value: number) { this.volume = value; if (this.output) this.output.gain.value = value }
@@ -252,7 +268,7 @@ export class VoiceSession {
     this.silenceSpeech()
     window.clearInterval(this.statsTimer)
     if (this.capture) { this.capture.port.onmessage = null; this.capture.port.close(); this.capture.disconnect() }
-    this.microphone?.disconnect(); this.silent?.disconnect()
+    this.microphone?.disconnect(); this.boost?.disconnect(); this.leveler?.disconnect(); this.silent?.disconnect()
     this.stream?.getTracks().forEach(track => { track.onended = null; track.stop() })
     this.peers.forEach(peer => this.dispose(peer)); this.peers.clear()
     this.output?.disconnect()

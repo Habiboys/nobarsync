@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } fr
 import { createPortal } from "react-dom"
 import { VoiceSession, type VoicePeer } from "./voice"
 
-export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
+export function VoiceCall({ code, roomConnected, dock, fullscreen, showMic, onSpeechDuck }: {
   code: string
   roomConnected: boolean
   dock: HTMLElement | null
+  fullscreen: boolean
+  showMic: boolean
   onSpeechDuck: (active: boolean) => void
 }) {
   const session = useRef<VoiceSession | null>(null)
@@ -20,7 +22,7 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   const [message, setMessage] = useState("")
   const [holding, setHolding] = useState(false)
   const [remoteSpeech, setRemoteSpeech] = useState(false)
-  const [volume, setVolume] = useState(150)
+  const [volume, setVolume] = useState(200)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [device, setDevice] = useState("")
   onSpeechDuckRef.current = onSpeechDuck
@@ -43,11 +45,17 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
     if (state !== "active") return
     const stop = () => { window.setTimeout(() => { if (!document.hasFocus() && document.activeElement?.tagName !== "IFRAME") endTalkRef.current() }, 0) }
     const onHide = () => { if (document.visibilityState !== "visible") stop() }
+    // Any tap is a user gesture that lets the browser resume a paused call.
+    const resume = () => session.current?.resumeAudio()
     window.addEventListener("blur", stop)
     document.addEventListener("visibilitychange", onHide)
+    window.addEventListener("pointerdown", resume, true)
+    window.addEventListener("keydown", resume, true)
     return () => {
       window.removeEventListener("blur", stop)
       document.removeEventListener("visibilitychange", onHide)
+      window.removeEventListener("pointerdown", resume, true)
+      window.removeEventListener("keydown", resume, true)
     }
   }, [state])
   function applyDuck() { onSpeechDuckRef.current(holdingRef.current || remoteRef.current) }
@@ -115,12 +123,18 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   }
   function leave() { session.current?.close(); session.current = null; setState("idle"); setPeers([]); setMessage(""); resetTalk() }
   const speaking = holding || remoteSpeech
-  const talk = state === "active" && dock ? createPortal(
-    <button type="button" className="talk-button" aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "BICARA" : "MIC"}</button>,
+  const talkButton = <button type="button" className={fullscreen ? "control-icon control-text" : "talk-button"} aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "Bicara" : fullscreen ? "Tahan" : "Mic"}</button>
+  const talk = showMic && dock && state === "active" ? createPortal(talkButton, dock) : null
+  const joinMic = showMic && dock && fullscreen && state !== "active" ? createPortal(
+    <>
+      <button type="button" className="control-icon control-text" disabled={!roomConnected || state === "joining"} aria-label="Gabung mikrofon" onClick={() => void join()}>{state === "joining" ? "…" : "Gabung"}</button>
+      {message ? <span className="fs-mic-note" role="status">{message}</span> : null}
+    </>,
     dock,
   ) : null
   return <>
     {talk}
+    {joinMic}
     <section className="audience-panel voice-panel" aria-label="Voice call">
       <div className="section-title"><div><p className="eyebrow">VOICE LOUNGE</p><h2>Ngobrol sambil nonton <span>{peers.length}/8</span></h2><p className="mt-2 text-xs text-mist">Tahan tombol di film untuk bicara. Mikrofon tertutup sampai tombol ditekan, dan suara film senyap selama seseorang bicara.</p></div>
         {state === "idle" ? <button className="primary-button" disabled={!roomConnected} onClick={() => void join()}>Gabung call</button> : <button className="secondary-button" onClick={leave}>{state === "joining" ? "Batalkan call" : "Keluar call"}</button>}</div>
@@ -131,10 +145,9 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
           if (state !== "active") return
           void session.current?.setDevice(next).then(() => setMessage("Mikrofon diganti.")).catch((error: Error) => setMessage(error.name === "NotFoundError" || error.name === "OverconstrainedError" ? "Mikrofon itu tidak tersedia. Pilih perangkat lain." : "Gagal mengganti mikrofon."))
         }}><option value="">Perangkat default</option>{devices.filter(d => d.deviceId).map((d, i) => <option value={d.deviceId} key={d.deviceId}>{d.label || `Mikrofon ${i + 1}`}</option>)}</select></label>
-        {state === "active" ? <button className="secondary-button" onClick={() => { setMessage(""); session.current?.resumeAudio() }}>Aktifkan suara call</button> : null}
-        <label className="flex items-center gap-2 text-sm">Volume call <input aria-label="Volume call" type="range" min="0" max="200" value={volume} onChange={e => { const next = Number(e.target.value); setVolume(next); session.current?.setVolume(next / 100) }} /><span>{volume}%</span></label>
+        <label className="flex items-center gap-2 text-sm">Volume call <input aria-label="Volume call" type="range" min="0" max="300" value={volume} onChange={e => { const next = Number(e.target.value); setVolume(next); session.current?.setVolume(next / 100) }} /><span>{volume}%</span></label>
       </div>
-      <p role="status" className="text-sm text-mist mt-3">{message || (state === "joining" ? "Meminta izin mikrofon dan menghubungkan…" : state === "active" ? (speaking ? "Seseorang sedang bicara · suara film senyap." : "Call aktif · tahan tombol di film untuk bicara.") : !roomConnected ? "Menunggu koneksi ruang sebelum bergabung call." : "Call opsional · maksimal 8 peserta agar ringan.")}</p>
+      <p role="status" className="text-sm text-mist mt-3">{message || (state === "joining" ? "Meminta izin mikrofon dan menghubungkan…" : state === "active" ? (holding ? "Mikrofon menyala · lepas tombol MIC setelah selesai bicara." : speaking ? "Teman sedang bicara · suara film senyap." : "Mau bicara? Tekan dan tahan tombol MIC di layar film, lalu lepas setelah selesai.") : !roomConnected ? "Menunggu koneksi ruang sebelum bergabung call." : "Call opsional · maksimal 8 peserta agar ringan.")}</p>
       <div className="flex flex-wrap gap-2 mt-3">{peers.map(peer => <span className="voice-person" data-state={peer.state} data-received-frames={peer.receivedFrames} key={peer.id}>{peer.muted ? "🔇" : "🎙"} {peer.name} · {peer.state === "connected" ? "Terhubung" : peer.state === "failed" ? "Gagal" : peer.state === "disconnected" ? "Terputus" : "Menghubungkan"}</span>)}</div>
       <details className="mt-3 text-xs text-mist"><summary>Suara film senyap saat bicara?</summary><p className="mt-2">Saat seseorang bicara, aplikasi mematikan suara film di perangkat ini supaya mikrofon tidak membawa soundtrack dan suara teman tetap terdengar. Slider film kembali setelah bicara selesai. Di Windows, pilih Sound → Communications → Do nothing agar sistem tidak mengubah volume di luar itu. Jika memakai headset Bluetooth, coba mikrofon laptop/USB agar headset tidak beralih ke mode telepon. Headphone membantu mencegah sisa gema suara orang.</p></details>
     </section>
