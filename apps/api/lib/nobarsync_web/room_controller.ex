@@ -349,6 +349,7 @@ defmodule NobarSyncWeb.RoomController do
       id: message.id,
       body: message.body,
       display_name: message.display_name,
+      member_id: message.member_id,
       inserted_at: message.inserted_at
     }
   end
