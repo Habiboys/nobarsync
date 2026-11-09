@@ -93,6 +93,8 @@ defmodule NobarSyncWeb.Router do
       post "/users/:id/revoke-sessions", AdminController, :revoke_sessions
       get "/audit", AdminController, :audit
       get "/media", AdminController, :media
+      patch "/media/:id", AdminController, :update_media
+      delete "/media/:id", AdminController, :delete_media
       get "/rooms", AdminController, :rooms
       get "/jobs", AdminController, :jobs
       get "/metrics", AdminController, :metrics

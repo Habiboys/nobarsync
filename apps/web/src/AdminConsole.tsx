@@ -3,9 +3,10 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "./api"
 import { AdminUsers } from "./AdminUsers"
 import { AdminAudit } from "./AdminAudit"
+import { AdminMedia } from "./AdminMedia"
 import { Panel } from "./ui"
 
-const tabs = [{ id: "users", label: "Pengguna" }, { id: "audit", label: "Jejak tindakan" }, { id: "system", label: "Sistem" }] as const
+const tabs = [{ id: "users", label: "Pengguna" }, { id: "media", label: "Film" }, { id: "audit", label: "Jejak tindakan" }, { id: "system", label: "Sistem" }] as const
 type Tab = typeof tabs[number]["id"]
 
 export function AdminConsole({ me }: { me: string }) {
@@ -21,10 +22,10 @@ export function AdminConsole({ me }: { me: string }) {
     document.getElementById(`admin-tab-${tabs[next].id}`)?.focus()
   }
   return <>
-    <div className="page-heading"><div><h1>Administrasi</h1><p>Akun pengguna dan operasional Manonton.</p></div></div>
+    <div className="page-heading"><div><h1>Administrasi</h1><p>Akun pengguna, koleksi film, dan operasional Manonton.</p></div></div>
     <div className="admin-tabs" role="tablist" aria-label="Administrasi" onKeyDown={navigateTab}>{tabs.map(item => <button key={item.id} id={`admin-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`admin-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)}>{item.label}</button>)}</div>
     <section id={`admin-panel-${tab}`} role="tabpanel" aria-labelledby={`admin-tab-${tab}`}>
-      {tab === "users" ? <AdminUsers me={me} /> : tab === "audit" ? <AdminAudit /> : <>
+      {tab === "users" ? <AdminUsers me={me} /> : tab === "media" ? <AdminMedia /> : tab === "audit" ? <AdminAudit /> : <>
         {metrics.error ? <p role="alert">Ringkasan sistem gagal dimuat: {metrics.error.message}</p> : null}
         {metrics.isPending ? <p role="status">Memuat ringkasan sistem…</p> : null}
         <dl className="system-counts">{Object.entries(metrics.data?.counts || {}).map(([key, value]) => <div key={key}><dt>{({ users: "Pengguna", media: "Film", ready_media: "Film siap", open_rooms: "Ruang aktif" } as Record<string, string>)[key] || key}</dt><dd>{value}</dd></div>)}</dl>

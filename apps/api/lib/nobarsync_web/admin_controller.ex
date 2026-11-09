@@ -28,7 +28,32 @@ defmodule NobarSyncWeb.AdminController do
   defp user_json(user),
     do: Map.merge(NobarSyncWeb.AuthController.user_json(user), %{inserted_at: user.inserted_at})
 
-  def media(conn, params), do: NobarSyncWeb.MediaController.index(conn, params)
+  def media(conn, params) do
+    result = NobarSync.AdminMedia.list(params)
+    json(conn, %{result | items: Enum.map(result.items, &admin_media_json/1)})
+  end
+
+  def update_media(conn, %{"id" => id} = params) do
+    with {:ok, asset} <- NobarSync.AdminMedia.update(conn.assigns.current_user, id, params) do
+      json(conn, %{media: admin_media_json(asset)})
+    end
+  end
+
+  def delete_media(conn, %{"id" => id} = params) do
+    with {:ok, _} <- NobarSync.AdminMedia.delete(conn.assigns.current_user, id, params) do
+      json(conn, %{ok: true})
+    end
+  end
+
+  defp admin_media_json(asset) do
+    Map.put(
+      NobarSyncWeb.MediaController.asset_json(asset),
+      :owner,
+      asset.owner &&
+        %{id: asset.owner.id, display_name: asset.owner.display_name, email: asset.owner.email}
+    )
+    |> Map.put(:inserted_at, asset.inserted_at)
+  end
 
   def rooms(conn, _) do
     json(conn, %{

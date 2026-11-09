@@ -40,7 +40,7 @@ defmodule NobarSyncWeb.MediaController do
   def update(conn, %{"id" => id} = params) do
     asset = Media.get_asset!(id)
 
-    if owner?(conn, asset) do
+    if owns?(conn, asset) do
       with {:ok, asset} <- Media.update_asset(asset, params) do
         json(conn, %{media: asset_json(asset)})
       end
@@ -52,7 +52,7 @@ defmodule NobarSyncWeb.MediaController do
   def delete(conn, %{"id" => id}) do
     asset = Media.get_asset!(id)
 
-    if owner?(conn, asset) do
+    if owns?(conn, asset) do
       case Media.delete_asset(asset) do
         {:ok, _} -> json(conn, %{ok: true})
         other -> other
@@ -126,6 +126,9 @@ defmodule NobarSyncWeb.MediaController do
     user = conn.assigns.current_user
     user.role == "admin" or asset.owner_id == user.id
   end
+
+  # Admin changes to other people's films go through /admin/media, which requires a reason and audits.
+  defp owns?(conn, asset), do: asset.owner_id == conn.assigns.current_user.id
 
   defp loaded(%Ecto.Association.NotLoaded{}), do: []
   defp loaded(list) when is_list(list), do: list

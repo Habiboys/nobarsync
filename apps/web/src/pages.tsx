@@ -251,7 +251,7 @@ export function Library() {
       {media.data?.items.length === 0 ? <Panel title="Belum ada film yang cocok"><p className="text-sm text-mist">Ubah pencarian, atau gunakan Tambah film untuk mengisi pustaka.</p></Panel> : null}
       <div className="library-grid">
         {(media.data?.items || []).map((item) => {
-          const mine = item.owner_id === userId || session.data?.user?.role === "admin"
+          const mine = item.owner_id === userId
           return (
             <article key={item.id} className="media-card">
               <p className="media-format">{item.provider === "youtube" ? "Player YouTube" : "Video unggahan"}</p>
