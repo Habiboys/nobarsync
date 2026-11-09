@@ -52,7 +52,12 @@ defmodule NobarSyncWeb.AdminController do
       asset.owner &&
         %{id: asset.owner.id, display_name: asset.owner.display_name, email: asset.owner.email}
     )
-    |> Map.put(:inserted_at, asset.inserted_at)
+    |> Map.merge(%{
+      byte_size: asset.byte_size,
+      content_type: asset.content_type,
+      inserted_at: asset.inserted_at,
+      updated_at: asset.updated_at
+    })
   end
 
   def rooms(conn, _) do
