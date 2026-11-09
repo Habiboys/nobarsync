@@ -122,8 +122,8 @@
 .chat-empty p { font-size: .85rem; line-height: 1.8; }
 .chat-row { display: flex; justify-content: flex-start; }
 .chat-row.mine { justify-content: flex-end; }
-.chat-bubble { max-width: min(78%, 320px); margin: 0; padding: 6px 9px 5px; border: 1px solid var(--chat-line); border-radius: 10px 10px 10px 2px; background: var(--chat-bubble); color: var(--chat-ink); font-size: .875rem; overflow-wrap: anywhere; }
-.chat-row.mine .chat-bubble { border-radius: 10px 10px 2px 10px; background: var(--chat-mine); }
+.chat-bubble { max-width: min(78%, 320px); margin: 0; padding: 6px 9px 5px; border: 1px solid var(--chat-time); border-radius: 10px 10px 10px 2px; background: var(--chat-bubble); color: var(--chat-ink); font-size: .875rem; overflow-wrap: anywhere; }
+.chat-row.mine .chat-bubble { border-radius: 10px 10px 2px 10px; border-color: var(--chat-name); background: var(--chat-mine); }
 .chat-bubble strong { display: block; margin-bottom: 2px; color: var(--chat-name); font-size: .75rem; font-weight: 650; }
 .chat-bubble p { margin: 0; line-height: 1.45; }
 .chat-bubble time { display: block; margin-top: 2px; text-align: right; font-size: .75rem; color: var(--chat-time); }
