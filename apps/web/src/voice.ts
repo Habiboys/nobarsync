@@ -37,7 +37,6 @@ export class VoiceSession {
   private quietFrames = 0
   private statsTimer = 0
   private speechTimer = 0
-  private micTimer = 0
   private update: (peers: VoicePeer[]) => void
   private notice: (message: string) => void
   private ended: () => void
@@ -183,23 +182,14 @@ export class VoiceSession {
   }
   transmit(open: boolean) {
     if (this.closed || !this.joined) return
-    window.clearTimeout(this.micTimer)
     const generation = ++this.talkGeneration
-    if (!open) {
-      this.muted = true
-      this.armMic(false)
-      this.channel?.push("voice.mute", { muted: true })
-      return
-    }
-    this.channel?.push("voice.mute", { muted: false }).receive("ok", () => {
-      if (this.closed || generation !== this.talkGeneration) return
-      // Give speaker/device buffers time to drain after the local film was muted.
-      this.micTimer = window.setTimeout(() => {
-        if (this.closed || generation !== this.talkGeneration) return
-        this.muted = false
-        this.armMic(true)
-      }, 160)
-    }).receive("error", () => this.transmitFailed(generation))
+    // Unmute is queued before any captured frame, so the server accepts speech
+    // from the start of the press instead of after a round-trip plus a delay.
+    this.muted = !open
+    this.armMic(open)
+    const push = this.channel?.push("voice.mute", { muted: !open })
+    if (!open) return
+    push?.receive("error", () => this.transmitFailed(generation))
       .receive("timeout", () => this.transmitFailed(generation))
   }
   setVolume(value: number) { this.volume = value; if (this.output) this.output.gain.value = value }

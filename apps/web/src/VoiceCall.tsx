@@ -41,7 +41,7 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   }, [])
   useEffect(() => {
     if (state !== "active") return
-    const stop = () => endTalkRef.current()
+    const stop = () => { window.setTimeout(() => { if (!document.hasFocus() && document.activeElement?.tagName !== "IFRAME") endTalkRef.current() }, 0) }
     const onHide = () => { if (document.visibilityState !== "visible") stop() }
     window.addEventListener("blur", stop)
     document.addEventListener("visibilitychange", onHide)
@@ -116,7 +116,7 @@ export function VoiceCall({ code, roomConnected, dock, onSpeechDuck }: {
   function leave() { session.current?.close(); session.current = null; setState("idle"); setPeers([]); setMessage(""); resetTalk() }
   const speaking = holding || remoteSpeech
   const talk = state === "active" && dock ? createPortal(
-    <button type="button" className="talk-button" aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onBlur={endTalk} onPointerLeave={endTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "BICARA" : "MIC"}</button>,
+    <button type="button" className="talk-button" aria-pressed={holding} aria-label="Tahan untuk bicara" onContextMenu={(event) => event.preventDefault()} onPointerDown={beginTalk} onPointerUp={endTalk} onPointerCancel={endTalk} onLostPointerCapture={endTalk} onKeyDown={(event) => { if (event.repeat || (event.key !== " " && event.key !== "Enter")) return; beginTalk(event) }} onKeyUp={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); endTalk() } }}>{holding ? "BICARA" : "MIC"}</button>,
     dock,
   ) : null
   return <>
