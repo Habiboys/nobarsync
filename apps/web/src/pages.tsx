@@ -59,14 +59,19 @@ export function Login() {
   })
   return (
     <Shell>
-      <div className="page-heading"><div><h1>Masuk ke Manonton</h1><p>Lanjutkan ke ruang dan film Anda.</p></div></div><Panel className="max-w-md">
-        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); login.mutate() }}>
-          <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-          <Field label="Kata sandi" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
-          <Button type="submit" disabled={login.isPending}>{login.isPending ? "Memeriksa akun…" : "Masuk"}</Button>
-          <p className="text-sm text-mist">Belum punya akun? <Link to={`/register?next=${encodeURIComponent(next)}`}>Daftar</Link></p>
-        </form>
-      </Panel>
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="page-heading"><div><h1>Masuk ke Manonton</h1><p>Lanjutkan ke ruang dan film Anda.</p></div></div>
+          <Panel>
+            <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); login.mutate() }}>
+              <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+              <Field label="Kata sandi" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+              <Button type="submit" disabled={login.isPending}>{login.isPending ? "Memeriksa akun…" : "Masuk"}</Button>
+              <p className="text-sm text-mist">Belum punya akun? <Link to={`/register?next=${encodeURIComponent(next)}`}>Daftar</Link></p>
+            </form>
+          </Panel>
+        </div>
+      </div>
     </Shell>
   )
 }
@@ -91,14 +96,21 @@ export function Register() {
   })
   return (
     <Shell>
-      <div className="page-heading"><div><h1>Buat akun</h1><p>Satu akun untuk ruang dan pustaka Anda. Gratis.</p></div></div><Panel className="max-w-md">
-        <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); register.mutate() }}>
-          <Field label="Nama" autoComplete="name" required minLength={2} maxLength={40} value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
-          <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
-          <Field label="Kata sandi" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} />
-          <p className="form-note">Gunakan setidaknya 8 karakter untuk kata sandi.</p><Button type="submit" disabled={register.isPending}>{register.isPending ? "Membuat akun…" : "Buat akun"}</Button><p className="text-sm text-mist">Sudah punya akun? <Link to={`/login?next=${encodeURIComponent(next)}`}>Masuk</Link></p>
-        </form>
-      </Panel>
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="page-heading"><div><h1>Buat akun</h1><p>Satu akun untuk ruang dan pustaka Anda. Gratis.</p></div></div>
+          <Panel>
+            <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); register.mutate() }}>
+              <Field label="Nama" autoComplete="name" required minLength={2} maxLength={40} value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+              <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+              <Field label="Kata sandi" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} />
+              <p className="form-note">Gunakan setidaknya 8 karakter untuk kata sandi.</p>
+              <Button type="submit" disabled={register.isPending}>{register.isPending ? "Membuat akun…" : "Buat akun"}</Button>
+              <p className="text-sm text-mist">Sudah punya akun? <Link to={`/login?next=${encodeURIComponent(next)}`}>Masuk</Link></p>
+            </form>
+          </Panel>
+        </div>
+      </div>
     </Shell>
   )
 }

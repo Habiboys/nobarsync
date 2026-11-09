@@ -17,6 +17,10 @@
 .page-heading { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 12px 0 30px; }
 .page-heading h1 { font-size: clamp(28px, 4vw, 42px); line-height: 1.1; font-weight: 550; letter-spacing: -.04em; }
 .page-heading p { margin-top: 10px; color: var(--color-mist); max-width: 64ch; }
+.auth-screen { min-height: calc(100vh - 190px); display: grid; place-items: center; padding: 28px 0 12px; }
+.auth-card { width: min(100%, 440px); }
+.auth-card .page-heading { display: block; margin: 0 0 18px; text-align: center; }
+.auth-card .page-heading p { margin-inline: auto; }
 .landing-intro { display: grid; gap: 32px; padding: 32px 0 48px; border-bottom: 1px solid var(--color-line); }
 .landing-intro h1 { font-size: clamp(42px, 6.8vw, 88px); line-height: 1.02; letter-spacing: -.055em; max-width: 10ch; font-weight: 500; }
 .landing-intro h1 em { display: block; font-style: normal; color: var(--accent-ink); }
