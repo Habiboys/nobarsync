@@ -20,6 +20,7 @@ defmodule NobarSync.Media do
       |> where([a], a.owner_id == ^user.id or a.visibility == "library")
       |> where([a], ilike(a.title, ^q))
       |> maybe_status(params["status"])
+      |> maybe_share(params["share"])
       |> order_by([a], desc: a.inserted_at)
 
     total = Repo.aggregate(query, :count)
@@ -58,9 +59,9 @@ defmodule NobarSync.Media do
             source_type: "upload",
             provider: "r2_hls",
             content_type: content_type,
-            byte_size: byte_size,
-            visibility: "private"
+            byte_size: byte_size
           })
+          |> put_publication(attrs)
           |> Repo.insert!()
 
         key = "videos/#{asset.id}/source/original.bin"
@@ -289,9 +290,9 @@ defmodule NobarSync.Media do
         provider: "youtube",
         youtube_id: id,
         source_url: url,
-        visibility: "private",
         progress: 100.0
       })
+      |> put_publication(attrs)
       |> Repo.insert()
     else
       {:error, :invalid} ->
@@ -303,16 +304,68 @@ defmodule NobarSync.Media do
     end
   end
 
-  def update_asset(%Asset{} = asset, attrs) do
-    asset
-    |> Asset.changeset(%{
+  def update_asset(%Asset{} = asset, attrs, opts \\ []) do
+    changes = %{
       title: present(attrs["title"]) || asset.title,
       description:
-        if(Map.has_key?(attrs, "description"), do: attrs["description"], else: asset.description),
-      visibility: present(attrs["visibility"]) || asset.visibility
-    })
+        if(Map.has_key?(attrs, "description"), do: attrs["description"], else: asset.description)
+    }
+
+    review =
+      if opts[:admin] do
+        %{
+          visibility: present(attrs["visibility"]) || asset.visibility,
+          share_request: present(attrs["share_request"]) || asset.share_request,
+          share_note:
+            if(Map.has_key?(attrs, "share_note"), do: attrs["share_note"], else: asset.share_note),
+          reviewed_at:
+            if(Map.has_key?(attrs, "reviewed_at"),
+              do: attrs["reviewed_at"],
+              else: asset.reviewed_at
+            )
+        }
+      else
+        %{}
+      end
+
+    asset
+    |> Asset.changeset(Map.merge(changes, review))
+    |> force_review(review)
     |> Repo.update()
   end
+
+  def set_share(%Asset{status: "cancelled"}, _),
+    do: {:error, {:invalid, "Film yang dibatalkan tidak bisa diajukan."}}
+
+  def set_share(%Asset{visibility: "library"}, "request"),
+    do: {:error, {:invalid, "Film ini sudah ada di pustaka bersama."}}
+
+  def set_share(%Asset{share_request: "pending"} = asset, "request"), do: {:ok, asset}
+
+  def set_share(%Asset{} = asset, "request") do
+    review_change(asset, %{share_request: "pending", share_note: nil, reviewed_at: nil})
+  end
+
+  def set_share(%Asset{share_request: "pending"} = asset, "cancel") do
+    review_change(asset, %{share_request: "none", share_note: nil, reviewed_at: nil})
+  end
+
+  def set_share(%Asset{visibility: "library"} = asset, "withdraw") do
+    review_change(asset, %{
+      visibility: "private",
+      share_request: "none",
+      share_note: nil,
+      reviewed_at: nil
+    })
+  end
+
+  def set_share(_, "cancel"),
+    do: {:error, {:invalid, "Tidak ada permintaan yang bisa dibatalkan."}}
+
+  def set_share(_, "withdraw"),
+    do: {:error, {:invalid, "Film ini tidak sedang di pustaka bersama."}}
+
+  def set_share(_, _), do: {:error, {:invalid, "Permintaan publikasi tidak dikenali."}}
 
   def create_url_import(user, attrs) do
     url = attrs["url"] || ""
@@ -326,9 +379,9 @@ defmodule NobarSync.Media do
           status: "queued",
           source_type: "url",
           provider: "r2_hls",
-          source_url: url,
-          visibility: "private"
+          source_url: url
         })
+        |> put_publication(attrs)
         |> Repo.insert()
 
       {:ok, _} = Oban.insert(NobarSync.Media.EncodeWorker.new(%{"media_id" => asset.id}))
@@ -524,6 +577,41 @@ defmodule NobarSync.Media do
 
   defp maybe_status(query, status) when status in [nil, ""], do: query
   defp maybe_status(query, status), do: where(query, [a], a.status == ^status)
+
+  defp maybe_share(query, share) when share in ["none", "pending", "approved", "rejected"],
+    do: where(query, [a], a.share_request == ^share)
+
+  defp maybe_share(query, _), do: query
+
+  defp put_publication(changeset, attrs) do
+    fields =
+      case attrs["audience"] do
+        audience when audience in ["library", "public"] ->
+          %{visibility: "private", share_request: "pending"}
+
+        _ ->
+          %{visibility: "private", share_request: "none"}
+      end
+
+    Ecto.Changeset.change(changeset, fields)
+  end
+
+  defp review_change(asset, fields) do
+    asset
+    |> Ecto.Changeset.change(fields)
+    |> Ecto.Changeset.validate_inclusion(:share_request, ~w(none pending approved rejected))
+    |> Ecto.Changeset.validate_inclusion(:visibility, ~w(private library))
+    |> Repo.update()
+  end
+
+  defp force_review(changeset, review) when map_size(review) == 0, do: changeset
+
+  defp force_review(changeset, review) do
+    Enum.reduce([:visibility, :share_request, :share_note, :reviewed_at], changeset, fn key,
+                                                                                        next ->
+      Ecto.Changeset.force_change(next, key, Map.get(review, key))
+    end)
+  end
 
   defp parse_int(value, _default) when is_integer(value), do: value
 

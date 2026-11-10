@@ -6,6 +6,7 @@ type AuditEvent = { id: string; action: string; actor: string | null; resource_i
 
 const actionLabel: Record<string, string> = { "admin.sessions_revoke": "cabut sesi", "admin.media_update": "ubah film", "admin.media_delete": "hapus film" }
 const visibilityLabel = (value?: string) => value === "library" ? "Pustaka bersama" : value === "private" ? "Pribadi" : value
+const shareLabel = (value?: string) => ({ none: "Tidak diajukan", pending: "Menunggu", approved: "Disetujui", rejected: "Ditolak" } as Record<string, string>)[value || ""] || value
 
 function Details({ event }: { event: AuditEvent }) {
   const { before, after, owner } = event.metadata
@@ -13,6 +14,7 @@ function Details({ event }: { event: AuditEvent }) {
     <div><dt>Film</dt><dd>{before?.title || event.resource_id}{after && after.title !== before?.title ? ` ke ${after.title}` : ""}</dd></div>
     <div><dt>Pemilik</dt><dd>{owner?.email || owner?.display_name || "Tidak diketahui"}</dd></div>
     {after ? <div><dt>Akses</dt><dd>{visibilityLabel(before?.visibility)} ke {visibilityLabel(after.visibility)}</dd></div> : null}
+    {after?.share_request ? <div><dt>Persetujuan</dt><dd>{shareLabel(before?.share_request)} ke {shareLabel(after.share_request)}</dd></div> : null}
   </dl>
   return <dl className="audit-details"><div><dt>Akun</dt><dd>{after?.display_name || event.resource_id}</dd></div><div><dt>Peran</dt><dd>{before?.role} ke {after?.role}</dd></div><div><dt>Status</dt><dd>{before?.status} ke {after?.status}</dd></div></dl>
 }

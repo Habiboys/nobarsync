@@ -21,6 +21,9 @@ defmodule NobarSync.Media.Asset do
     field :progress, :float, default: 0.0
     field :error, :string
     field :visibility, :string, default: "private"
+    field :share_request, :string, default: "none"
+    field :share_note, :string
+    field :reviewed_at, :utc_datetime_usec
     belongs_to :owner, NobarSync.Accounts.User
     has_many :variants, NobarSync.Media.Variant, foreign_key: :media_asset_id
     has_many :subtitles, NobarSync.Media.Subtitle, foreign_key: :media_asset_id
@@ -49,7 +52,10 @@ defmodule NobarSync.Media.Asset do
       :master_playlist_key,
       :progress,
       :error,
-      :visibility
+      :visibility,
+      :share_request,
+      :share_note,
+      :reviewed_at
     ])
     |> validate_required([:title, :status, :source_type, :provider])
     |> validate_inclusion(
@@ -57,6 +63,8 @@ defmodule NobarSync.Media.Asset do
       ~w(pending queued probing processing uploading ready failed cancelled)
     )
     |> validate_inclusion(:visibility, ~w(private library))
+    |> validate_inclusion(:share_request, ~w(none pending approved rejected))
     |> validate_length(:title, min: 1, max: 160)
+    |> validate_length(:share_note, max: 500)
   end
 end

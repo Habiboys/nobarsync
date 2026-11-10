@@ -41,7 +41,19 @@ defmodule NobarSyncWeb.MediaController do
     asset = Media.get_asset!(id)
 
     if owns?(conn, asset) do
-      with {:ok, asset} <- Media.update_asset(asset, params) do
+      result =
+        case params["share"] do
+          action when action in ["request", "cancel", "withdraw"] ->
+            Media.set_share(asset, action)
+
+          nil ->
+            Media.update_asset(asset, params)
+
+          _ ->
+            {:error, {:invalid, "Permintaan publikasi tidak dikenali."}}
+        end
+
+      with {:ok, asset} <- result do
         json(conn, %{media: asset_json(asset)})
       end
     else
@@ -68,7 +80,11 @@ defmodule NobarSyncWeb.MediaController do
     if owner?(conn, asset) do
       with {:ok, subtitle} <- Media.upload_subtitle(asset, params) do
         json(conn, %{
-          subtitle: %{language: subtitle.language, label: subtitle.label, vtt_key: subtitle.vtt_key}
+          subtitle: %{
+            language: subtitle.language,
+            label: subtitle.label,
+            vtt_key: subtitle.vtt_key
+          }
         })
       end
     else
@@ -109,11 +125,20 @@ defmodule NobarSyncWeb.MediaController do
       progress: asset.progress,
       error: asset.error,
       visibility: asset.visibility,
+      share_request: asset.share_request,
+      share_note: asset.share_note,
+      reviewed_at: asset.reviewed_at,
       owner_id: asset.owner_id,
       variants:
-        Enum.map(loaded(asset.variants), &%{label: &1.label, bandwidth: &1.bandwidth, height: &1.height}),
+        Enum.map(
+          loaded(asset.variants),
+          &%{label: &1.label, bandwidth: &1.bandwidth, height: &1.height}
+        ),
       subtitles:
-        Enum.map(loaded(asset.subtitles), &%{language: &1.language, label: &1.label, vtt_key: &1.vtt_key})
+        Enum.map(
+          loaded(asset.subtitles),
+          &%{language: &1.language, label: &1.label, vtt_key: &1.vtt_key}
+        )
     }
   end
 

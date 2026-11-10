@@ -196,6 +196,7 @@ export function Library() {
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
   const [filter, setFilter] = useState("")
+  const [share, setShare] = useState("")
   const [preview, setPreview] = useState<Media | null>(null)
   const [params, setParams] = useSearchParams()
   const uploadOpen = params.get("upload") === "1"
@@ -211,9 +212,9 @@ export function Library() {
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const media = useQuery({
-    queryKey: ["media", search, page, filter],
-    refetchInterval: query => query.state.data?.items.some(item => ["pending", "queued", "probing", "processing", "uploading"].includes(item.status)) ? 4000 : false,
-    queryFn: () => api<{ items: Media[]; total: number; per_page: number }>(`/api/v1/media?q=${encodeURIComponent(search)}&page=${page}&status=${filter}`),
+    queryKey: ["media", search, page, filter, share],
+    refetchInterval: query => query.state.data?.items.some(item => ["pending", "queued", "probing", "processing", "uploading"].includes(item.status) || item.share_request === "pending") ? 4000 : false,
+    queryFn: () => api<{ items: Media[]; total: number; per_page: number }>(`/api/v1/media?q=${encodeURIComponent(search)}&page=${page}&status=${filter}&share=${share}`),
     enabled: Boolean(session.data?.user),
   })
   const userId = session.data?.user?.id
@@ -224,6 +225,14 @@ export function Library() {
       await client.invalidateQueries({ queryKey: ["media"] })
     } catch (error) {
       push(error instanceof Error ? error.message : "Gagal menyimpan film")
+    }
+  }
+  async function changeShare(item: Media, action: "request" | "cancel" | "withdraw") {
+    try {
+      await api(`/api/v1/media/${item.id}`, { method: "PATCH", body: JSON.stringify({ share: action }) })
+      await client.invalidateQueries({ queryKey: ["media"] })
+    } catch (error) {
+      push(error instanceof Error ? error.message : "Gagal mengubah pengajuan film")
     }
   }
   async function remove(item: Media) {
@@ -242,6 +251,7 @@ export function Library() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="field"><span>Cari judul</span><input placeholder="Cari judul" value={q} onChange={(event) => setQ(event.target.value)} /></label>
           <select aria-label="Filter status film" className="rounded-xl border p-2" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1) }}><option value="">Semua status</option><option value="ready">Siap ditonton</option><option value="processing">Sedang diolah</option><option value="failed">Gagal</option></select>
+          <select aria-label="Filter persetujuan film" className="rounded-xl border p-2" value={share} onChange={(event) => { setShare(event.target.value); setPage(1) }}><option value="">Semua pengajuan</option><option value="pending">Menunggu persetujuan</option><option value="rejected">Ditolak</option><option value="approved">Disetujui</option><option value="none">Hanya saya</option></select>
           <Button onClick={() => showUpload(true)}>Tambah film</Button>
         </div>
       </div>
@@ -262,6 +272,7 @@ export function Library() {
                   <h2 className="font-display text-2xl">{item.title}</h2>
                 )}
                 <p className="media-meta">{({ pending: "Unggahan belum selesai", ready: "Siap ditonton", processing: "Sedang diolah", probing: "Memeriksa video", queued: "Dalam antrean", uploading: "Sedang diunggah", failed: "Pengolahan gagal" } as Record<string, string>)[item.status] || item.status}{item.duration_ms ? ` · ${Math.floor(item.duration_ms / 60000)} menit` : ""}</p>
+                <p className="share-line" data-state={item.visibility === "library" ? "approved" : item.share_request || "none"}>{shareCopy(item, mine)}</p>
                 <Button tone="ghost" className="mt-4" disabled={item.status !== "ready"} onClick={() => setPreview(item)}>Pratinjau</Button>
                 {item.status !== "ready" ? <p className="form-note mt-2">Pratinjau tersedia setelah film selesai diolah.</p> : null}
                 {mine ? (
@@ -272,6 +283,9 @@ export function Library() {
                       <Button tone="ghost" onClick={() => { setEditing(item.id); setDraft(item.title) }}>Ubah</Button>
                     )}
                     <Button tone="ghost" onClick={() => remove(item)}>Hapus</Button>
+                    {item.share_request === "pending" ? <Button tone="ghost" onClick={() => void changeShare(item, "cancel")}>Batalkan pengajuan</Button> : null}
+                    {item.visibility !== "library" && item.share_request !== "pending" ? <Button tone="ghost" onClick={() => void changeShare(item, "request")}>{item.share_request === "rejected" ? "Ajukan lagi" : "Ajukan ke semua"}</Button> : null}
+                    {item.visibility === "library" ? <Button tone="ghost" onClick={() => void changeShare(item, "withdraw")}>Tarik ke pribadi</Button> : null}
                   </div>
                 ) : null}
               </div>
@@ -280,7 +294,7 @@ export function Library() {
         })}
       </div>
       {media.data && media.data.total > media.data.per_page ? <div className="mt-6 flex items-center justify-center gap-4"><Button tone="ghost" disabled={page <= 1} onClick={() => setPage(page - 1)}>← Sebelumnya</Button><span className="text-sm text-mist">{page} / {Math.ceil(media.data.total / media.data.per_page)}</span><Button tone="ghost" disabled={page * media.data.per_page >= media.data.total} onClick={() => setPage(page + 1)}>Berikutnya →</Button></div> : null}
-      <dialog ref={uploadDialog} className="media-dialog" aria-labelledby="upload-title" onClose={() => { if (uploadOpen) showUpload(false) }}><header className="modal-heading"><div><h2 id="upload-title">Tambah film</h2><p>Film akan masuk ke pustaka Anda.</p></div><button className="secondary-button" onClick={() => showUpload(false)}>Tutup</button></header>{uploadOpen ? <UploadForm /> : null}</dialog>
+      <dialog ref={uploadDialog} className="media-dialog" aria-labelledby="upload-title" onClose={() => { if (uploadOpen) showUpload(false) }}><header className="modal-heading"><div><h2 id="upload-title">Tambah film</h2><p>Bawaan film hanya untuk kamu. Pengajuan ke semua pengguna menunggu admin.</p></div><button className="secondary-button" onClick={() => showUpload(false)}>Tutup</button></header>{uploadOpen ? <UploadForm /> : null}</dialog>
       {preview ? <Suspense fallback={<p role="status">Menyiapkan pratinjau…</p>}><MediaPreview media={preview} onClose={() => setPreview(null)} /></Suspense> : null}
     </Shell>
   )
@@ -299,6 +313,7 @@ function UploadForm() {
   const uploadSessionRef = useRef<string | null>(null)
   const [resumeHint, setResumeHint] = useState(false)
   const [source, setSource] = useState("file")
+  const [audience, setAudience] = useState("private")
   const resumeKey = `nobarsync-upload:${session.data?.user?.id || "anonymous"}`
   useEffect(() => { setResumeHint(Boolean(localStorage.getItem(resumeKey))) }, [resumeKey])
   useEffect(() => () => uploadAbortRef.current?.abort(), [])
@@ -313,7 +328,7 @@ function UploadForm() {
     if (!saved) {
       const created = await api<{ upload_session_id: string; part_size: number }>("/api/v1/media/uploads", {
         method: "POST", signal: controller.signal,
-        body: JSON.stringify({ title, content_type: chosen.type || "application/octet-stream", byte_size: chosen.size }),
+        body: JSON.stringify({ title, content_type: chosen.type || "application/octet-stream", byte_size: chosen.size, audience }),
       })
       saved = { id: created.upload_session_id, partSize: created.part_size, fingerprint, parts: [] }
       localStorage.setItem(resumeKey, JSON.stringify(saved))
@@ -341,7 +356,7 @@ function UploadForm() {
     setResumeHint(false)
     uploadSessionRef.current = null
     await client.invalidateQueries({ queryKey: ["media"] })
-    push("Unggahan selesai. Film sedang diolah untuk pemutaran adaptif.")
+    push(audience === "library" ? "Unggahan selesai. Film diolah dulu, lalu menunggu persetujuan admin." : "Unggahan selesai. Film sedang diolah dan hanya untuk kamu.")
   }
   async function abortUpload() {
     uploadAbortRef.current?.abort()
@@ -355,6 +370,8 @@ function UploadForm() {
     <div className="upload-form">
       <fieldset className="source-picker"><legend>Sumber film</legend>{[{id:"file",label:"Berkas video"},{id:"youtube",label:"YouTube"},{id:"url",label:"URL langsung"}].map(item => <label key={item.id}><input type="radio" name="upload-source" checked={source===item.id} disabled={busy} onChange={() => setSource(item.id)} />{item.label}</label>)}</fieldset>
       <Field label={source === "file" ? "Judul" : "Judul (opsional)"} value={title} onChange={event => setTitle(event.target.value)} />
+      <fieldset className="source-picker"><legend>Siapa yang bisa menonton</legend>{[{ id: "private", label: "Hanya saya" }, { id: "library", label: "Semua pengguna" }].map(item => <label key={item.id}><input type="radio" name="audience" checked={audience === item.id} disabled={busy} onChange={() => setAudience(item.id)} />{item.label}</label>)}</fieldset>
+      <p className="form-note">Hanya saya adalah bawaan, dan film langsung bisa kamu putar. Semua pengguna tidak langsung masuk pustaka. Admin menonton dulu, lalu menyetujui atau menolak. Statusnya tampil di kartu film.</p>
       {source === "file" ? <form className="space-y-3 mt-5" onSubmit={(event) => {
           event.preventDefault()
           if (!title.trim() || !file) {
@@ -397,16 +414,16 @@ function UploadForm() {
             push("Tempel URL YouTube dulu.")
             return
           }
-          void api("/api/v1/media/youtube", { method: "POST", body: JSON.stringify({ url, title }) })
+          void api("/api/v1/media/youtube", { method: "POST", body: JSON.stringify({ url, title, audience }) })
             .then(() => {
-              push("Video YouTube ditambahkan. Sinkronnya terbatas oleh player resmi.")
+              push(audience === "library" ? "Video YouTube diajukan. Admin yang memutuskan sebelum masuk pustaka bersama." : "Video YouTube ditambahkan, hanya untuk kamu. Sinkronnya terbatas oleh player resmi.")
               return client.invalidateQueries({ queryKey: ["media"] })
             })
             .catch((error: Error) => push(error.message))
         }}>
           <Field label="URL YouTube" name="url" placeholder="https://www.youtube.com/watch?v=..." />
           <Button type="submit">Tambahkan YouTube</Button>
-        </form> : <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); const url = String(new FormData(event.currentTarget).get("source_url") || "").trim(); if (!url) return; void api("/api/v1/media/import-url", { method: "POST", body: JSON.stringify({ url, title: title || "Impor video" }) }).then(() => { push("Impor masuk antrean pengolahan"); void client.invalidateQueries({ queryKey: ["media"] }) }).catch((error: Error) => push(error.message)) }}><Field label="URL video langsung" name="source_url" type="url" required placeholder="https://domain-diizinkan/video.mp4" /><p className="form-note">Gunakan domain yang diizinkan pengelola. Untuk YouTube, pilih sumber YouTube.</p><Button type="submit">Impor video</Button></form>}
+        </form> : <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); const url = String(new FormData(event.currentTarget).get("source_url") || "").trim(); if (!url) return; void api("/api/v1/media/import-url", { method: "POST", body: JSON.stringify({ url, title: title || "Impor video", audience }) }).then(() => { push(audience === "library" ? "Impor diajukan. Setelah diolah, admin yang memutuskan." : "Impor masuk antrean pengolahan, hanya untuk kamu."); void client.invalidateQueries({ queryKey: ["media"] }) }).catch((error: Error) => push(error.message)) }}><Field label="URL video langsung" name="source_url" type="url" required placeholder="https://domain-diizinkan/video.mp4" /><p className="form-note">Gunakan domain yang diizinkan pengelola. Untuk YouTube, pilih sumber YouTube.</p><Button type="submit">Impor video</Button></form>}
     </div>
   )
 }
@@ -655,6 +672,18 @@ function putPart(url: string, body: Blob, onProgress: (loaded: number) => void, 
     xhr.onerror = () => reject(new Error("Bagian unggahan gagal"))
     xhr.send(body)
   })
+}
+
+function shareCopy(item: Media, mine: boolean) {
+  const when = item.reviewed_at ? ` ${new Date(item.reviewed_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" })} WIB.` : ""
+  if (!mine && item.visibility === "library") return "Dari pustaka bersama."
+  if (item.visibility === "library") return `Disetujui untuk semua pengguna.${when}`
+  if (item.share_request === "pending") return "Menunggu admin menonton dan memutuskan. Selama itu film hanya untuk kamu."
+  if (item.share_request === "rejected") {
+    const note = item.share_note?.trim().replace(/[.]+$/, "")
+    return `${note ? `Ditolak admin: ${note}.` : "Ditolak admin."} Film tetap hanya untuk kamu.${when}`
+  }
+  return "Hanya untuk kamu."
 }
 
 function formatBytes(value: number) {

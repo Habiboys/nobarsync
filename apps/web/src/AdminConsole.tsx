@@ -28,7 +28,7 @@ export function AdminConsole({ me }: { me: string }) {
       {tab === "users" ? <AdminUsers me={me} /> : tab === "media" ? <AdminMedia /> : tab === "audit" ? <AdminAudit /> : <>
         {metrics.error ? <p role="alert">Ringkasan sistem gagal dimuat: {metrics.error.message}</p> : null}
         {metrics.isPending ? <p role="status">Memuat ringkasan sistem…</p> : null}
-        <dl className="system-counts">{Object.entries(metrics.data?.counts || {}).map(([key, value]) => <div key={key}><dt>{({ users: "Pengguna", media: "Film", ready_media: "Film siap", open_rooms: "Ruang aktif" } as Record<string, string>)[key] || key}</dt><dd>{value}</dd></div>)}</dl>
+        <dl className="system-counts">{Object.entries(metrics.data?.counts || {}).map(([key, value]) => <div key={key}><dt>{({ users: "Pengguna", media: "Film", ready_media: "Film siap", pending_shares: "Menunggu persetujuan", open_rooms: "Ruang aktif" } as Record<string, string>)[key] || key}</dt><dd>{value}</dd></div>)}</dl>
         <Panel title="Pengolahan media" subtitle="Antrean diperbarui setiap 10 detik selama tab ini terbuka.">
           {jobs.isPending ? <p role="status">Memuat antrean pengolahan…</p> : null}
           {jobs.error ? <p role="alert">Antrean gagal dimuat: {jobs.error.message}</p> : null}

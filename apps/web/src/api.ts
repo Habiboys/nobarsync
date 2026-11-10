@@ -56,6 +56,9 @@ export type Media = {
   progress: number
   error: string | null
   visibility: string
+  share_request?: string
+  share_note?: string | null
+  reviewed_at?: string | null
   owner_id?: string
   youtube_id?: string | null
   variants: { label: string; height: number | null }[]

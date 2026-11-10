@@ -81,6 +81,8 @@ defmodule NobarSyncWeb.AdminController do
       users: Repo.aggregate(NobarSync.Accounts.User, :count),
       media: Repo.aggregate(Asset, :count),
       ready_media: Repo.aggregate(from(a in Asset, where: a.status == "ready"), :count),
+      pending_shares:
+        Repo.aggregate(from(a in Asset, where: a.share_request == "pending"), :count),
       open_rooms:
         Repo.aggregate(from(r in NobarSync.WatchRooms.Room, where: r.status == "open"), :count)
     }

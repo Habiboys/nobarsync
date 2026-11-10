@@ -33,6 +33,11 @@ defmodule NobarSync.AdminMedia do
         do: where(query, [asset: a], a.visibility == ^params["visibility"]),
         else: query
 
+    query =
+      if params["share_request"] in ~w(none pending approved rejected),
+        do: where(query, [asset: a], a.share_request == ^params["share_request"]),
+        else: query
+
     %{
       items:
         Repo.all(
@@ -43,6 +48,8 @@ defmodule NobarSync.AdminMedia do
             preload: [:owner, :variants, :subtitles]
         ),
       total: Repo.aggregate(query, :count),
+      pending_shares:
+        Repo.aggregate(from(a in Asset, where: a.share_request == "pending"), :count),
       page: page,
       per_page: @per_page
     }
@@ -51,9 +58,11 @@ defmodule NobarSync.AdminMedia do
   def update(actor, id, attrs) do
     with {:ok, reason} <- reason(attrs),
          {:ok, asset} <- fetch(actor, id) do
+      attrs = Map.merge(attrs, publication_decision(asset, attrs, reason))
+
       Repo.transaction(fn ->
         updated =
-          case Media.update_asset(asset, attrs) do
+          case Media.update_asset(asset, attrs, admin: true) do
             {:ok, updated} -> updated
             {:error, error} -> Repo.rollback(error)
           end
@@ -93,7 +102,13 @@ defmodule NobarSync.AdminMedia do
     metadata =
       Map.merge(changes, %{
         reason: reason,
-        owner: asset.owner && %{id: asset.owner.id, display_name: asset.owner.display_name, email: asset.owner.email}
+        owner:
+          asset.owner &&
+            %{
+              id: asset.owner.id,
+              display_name: asset.owner.display_name,
+              email: asset.owner.email
+            }
       })
 
     {:ok, _} =
@@ -105,7 +120,39 @@ defmodule NobarSync.AdminMedia do
       )
   end
 
-  defp snapshot(asset), do: Map.take(asset, [:title, :description, :visibility, :status])
+  defp snapshot(asset),
+    do: Map.take(asset, [:title, :description, :visibility, :status, :share_request])
+
+  defp publication_decision(_asset, %{"decision" => "approve"}, _reason) do
+    %{
+      "visibility" => "library",
+      "share_request" => "approved",
+      "share_note" => nil,
+      "reviewed_at" => now()
+    }
+  end
+
+  defp publication_decision(_asset, %{"decision" => "reject"}, reason) do
+    %{
+      "visibility" => "private",
+      "share_request" => "rejected",
+      "share_note" => reason,
+      "reviewed_at" => now()
+    }
+  end
+
+  defp publication_decision(%{visibility: visibility}, %{"visibility" => "library"}, _reason)
+       when visibility != "library" do
+    %{"share_request" => "approved", "share_note" => nil, "reviewed_at" => now()}
+  end
+
+  defp publication_decision(%{visibility: "library"}, %{"visibility" => "private"}, _reason) do
+    %{"share_request" => "none", "share_note" => nil, "reviewed_at" => now()}
+  end
+
+  defp publication_decision(_, _, _), do: %{}
+
+  defp now, do: DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
   defp reason(attrs) do
     reason = text(attrs["reason"], 501)

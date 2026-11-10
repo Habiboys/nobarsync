@@ -157,7 +157,12 @@
 .data-table td small { display: block; color: var(--color-mist); margin-top: 4px; overflow-wrap: anywhere; }
 .data-table td strong { font-weight: 500; }
 .data-table tbody tr:hover { background: var(--surface-raised); }
-.admin-filters { display: grid; gap: 16px; margin-bottom: 24px; }
+.admin-filters { display: grid; gap: 16px; margin-bottom: 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.media-table tr[data-share="pending"] { background: var(--surface-raised); }
+.share-line { margin-top: 8px; font-size: .85rem; line-height: 1.5; }
+.share-line[data-state="pending"] { color: var(--warning); }
+.share-line[data-state="rejected"] { color: var(--danger); }
+.share-line[data-state="approved"] { color: var(--success); }
 .admin-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--color-line); margin-bottom: 28px; overflow-x: auto; }
 .admin-tabs button { min-height: 48px; padding: 10px 2px; white-space: nowrap; color: var(--color-mist); border-bottom: 2px solid transparent; }
 .admin-tabs button:hover { color: var(--color-ink); }
@@ -217,12 +222,11 @@
   .app-shell { padding-inline: 32px; }
   .landing-intro { grid-template-columns: 1.1fr 1fr; align-items: end; gap: 50px; padding-block: 56px; }
   .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .admin-filters { grid-template-columns: minmax(180px, 1fr) 170px 150px; }
   .watch-page { padding-inline: 24px; }
   .player-controls { padding-inline: 18px; }
   .volume-slider { width: 70px; }
   .audience-panel { padding: 26px; }
-  .system-counts { grid-template-columns: repeat(4, 1fr); }
+  .system-counts { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 }
 @media (min-width: 1050px) {
   .app-header { justify-content: flex-start; gap: 40px; }
