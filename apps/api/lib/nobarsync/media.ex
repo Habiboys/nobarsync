@@ -7,8 +7,19 @@ defmodule NobarSync.Media do
 
   @part_size 8_388_608
 
-  def get_asset!(id), do: Repo.get!(Asset, id) |> Repo.preload([:variants, :subtitles])
-  def get_asset(id), do: if(id, do: Repo.get(Asset, id), else: nil)
+  def get_asset!(id) do
+    case get_asset(id) do
+      nil -> raise Ecto.NoResultsError, queryable: Asset
+      asset -> Repo.preload(asset, [:variants, :subtitles])
+    end
+  end
+
+  def get_asset(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, uuid} -> Repo.get(Asset, uuid)
+      :error -> nil
+    end
+  end
 
   def list(user, params) do
     page = parse_int(params["page"], 1)

@@ -3,6 +3,8 @@ defmodule NobarSyncWeb.MediaController do
 
   alias NobarSync.Media
 
+  plug :load_asset when action in [:show, :processing, :update, :delete, :add_subtitle]
+
   def index(conn, params) do
     page = Media.list(conn.assigns.current_user, params)
 
@@ -14,16 +16,16 @@ defmodule NobarSyncWeb.MediaController do
     })
   end
 
-  def show(conn, %{"id" => id}) do
-    asset = Media.get_asset!(id)
+  def show(conn, _params) do
+    asset = conn.assigns.media_asset
 
     if can_read?(conn, asset),
       do: json(conn, %{media: asset_json(asset)}),
       else: {:error, :forbidden}
   end
 
-  def processing(conn, %{"id" => id}) do
-    asset = Media.get_asset!(id)
+  def processing(conn, _params) do
+    asset = conn.assigns.media_asset
 
     if can_read?(conn, asset) do
       json(conn, %{
@@ -37,8 +39,8 @@ defmodule NobarSyncWeb.MediaController do
     end
   end
 
-  def update(conn, %{"id" => id} = params) do
-    asset = Media.get_asset!(id)
+  def update(conn, params) do
+    asset = conn.assigns.media_asset
 
     if owns?(conn, asset) do
       result =
@@ -61,8 +63,8 @@ defmodule NobarSyncWeb.MediaController do
     end
   end
 
-  def delete(conn, %{"id" => id}) do
-    asset = Media.get_asset!(id)
+  def delete(conn, _params) do
+    asset = conn.assigns.media_asset
 
     if owns?(conn, asset) do
       case Media.delete_asset(asset) do
@@ -74,8 +76,8 @@ defmodule NobarSyncWeb.MediaController do
     end
   end
 
-  def add_subtitle(conn, %{"id" => id} = params) do
-    asset = Media.get_asset!(id)
+  def add_subtitle(conn, params) do
+    asset = conn.assigns.media_asset
 
     if owner?(conn, asset) do
       with {:ok, subtitle} <- Media.upload_subtitle(asset, params) do
@@ -101,6 +103,26 @@ defmodule NobarSyncWeb.MediaController do
   def import_url(conn, params) do
     with {:ok, asset} <- Media.create_url_import(conn.assigns.current_user, params) do
       json(conn, %{media: asset_json(asset)})
+    end
+  end
+
+  def import_url_method(conn, _params) do
+    conn
+    |> put_resp_header("allow", "POST")
+    |> put_status(:method_not_allowed)
+    |> json(%{
+      error: %{
+        code: "method_not_allowed",
+        message: "Impor URL menggunakan POST. Tambahkan film melalui modal Pustaka.",
+        details: %{}
+      }
+    })
+  end
+
+  defp load_asset(conn, _opts) do
+    case Media.get_asset(conn.params["id"]) do
+      nil -> NobarSyncWeb.FallbackController.call(conn, {:error, :not_found}) |> halt()
+      asset -> assign(conn, :media_asset, NobarSync.Repo.preload(asset, [:variants, :subtitles]))
     end
   end
 

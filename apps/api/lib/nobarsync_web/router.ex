@@ -57,6 +57,7 @@ defmodule NobarSyncWeb.Router do
       post "/auth/avatar", AuthController, :avatar
 
       get "/media", MediaController, :index
+      get "/media/import-url", MediaController, :import_url_method
       get "/media/:id", MediaController, :show
       get "/media/:id/processing", MediaController, :processing
       patch "/media/:id", MediaController, :update
