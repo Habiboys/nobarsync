@@ -115,9 +115,9 @@ defmodule NobarSyncWeb.RoomChannel do
 
   def handle_in("reaction.send", %{"emoji" => emoji}, socket) do
     now = System.monotonic_time(:millisecond)
-    last = socket.assigns[:last_reaction] || now - 500
+    last = socket.assigns[:last_reaction] || now - 140
 
-    if now - last < 500 do
+    if now - last < 140 do
       {:reply, {:error, %{code: "rate_limited"}}, socket}
     else
       room = WatchRooms.get_room!(socket.assigns.room_id)

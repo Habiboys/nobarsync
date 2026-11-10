@@ -59,7 +59,7 @@
 .cinema-player:fullscreen video, .cinema-player:fullscreen .youtube-frame { grid-area: 1 / 1; width: 100%; height: 100%; max-height: none; aspect-ratio: auto; object-fit: contain; }
 .cinema-player:fullscreen .player-controls { position: relative; grid-area: 1 / 1; align-self: end; z-index: 8; }
 .cinema-player:fullscreen .chat-dock { grid-area: 1 / 2; position: relative; top: auto; width: auto; height: 100%; min-height: 0; border-radius: 0; border-block: 0; border-right: 0; }
-.youtube-frame { aspect-ratio: 16/9; width: 100%; }
+.youtube-frame { position: relative; z-index: 1; aspect-ratio: 16/9; width: 100%; }
 .youtube-frame iframe { width: 100%; height: 100%; aspect-ratio: 16/9; }
 .player-topline { position: absolute; top: 0; inset-inline: 0; display: flex; justify-content: space-between; gap: 10px; padding: 16px; background: linear-gradient(#000b, transparent); font-size: .65rem; color: #e8e8e0; pointer-events: none; }
 .player-controls { position: absolute; bottom: 0; inset-inline: 0; z-index: 5; background: linear-gradient(transparent, #000f); padding: 34px 12px 10px; }
@@ -87,7 +87,13 @@
 .player-loading { position: absolute; top: 48px; right: 16px; font-size: .75rem; padding: 8px 10px; border-radius: 4px; background: #000b; }
 .player-loading i { display: none; }
 .activate-player { position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: 6px; border: 1px solid #eb9b7d; color: #fff; background: #ad3c25; padding: 14px 20px; width: max-content; max-width: 90%; font-size: .875rem; }
-.reaction-overlay { position: absolute; right: 25px; bottom: 110px; display: flex; gap: 10px; pointer-events: none; font-size: 32px; }
+.reaction-overlay { position: absolute; inset: 0; z-index: 7; overflow: hidden; pointer-events: none; }
+.cinema-player:fullscreen .reaction-overlay { grid-area: 1 / 1; position: relative; inset: auto; align-self: stretch; justify-self: stretch; }
+.reaction-pop { position: absolute; left: 50%; bottom: 22%; display: grid; justify-items: center; gap: 6px; max-width: 80%; font-size: clamp(5.5rem, 14vw, 8.5rem); line-height: 1; color: #f4f2ed; text-shadow: 0 3px 0 #141816, 0 14px 28px #141816cc; opacity: 1; transform: translate(-50%, 0); animation: reaction-rise 2.1s ease-out forwards; }
+.reaction-pop small { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border-radius: 6px; background: #141816d0; color: #f4f2ed; font-size: .95rem; font-weight: 650; line-height: 1.4; text-shadow: none; }
+.reaction-pop.burst { bottom: auto; top: 46%; font-size: clamp(7rem, 18vw, 12rem); transform: translate(-50%, -50%); animation-name: reaction-burst; animation-duration: 1.8s; }
+@keyframes reaction-rise { 0% { opacity: 0; transform: translate(-50%, 24px) scale(.72); } 12% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), -240px) scale(1.08); } }
+@keyframes reaction-burst { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.45); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1.35); } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.9); } }
 .watch-title { padding: 26px 0 20px; display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .watch-title h1 { font-size: clamp(25px, 3vw, 38px); font-weight: 500; letter-spacing: -.035em; margin: 7px 0; overflow-wrap: anywhere; }
 .watch-title p[role="status"] { color: var(--color-mist); font-size: .8rem; }

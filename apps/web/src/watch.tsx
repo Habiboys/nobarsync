@@ -2,7 +2,7 @@ import { VoiceCall } from "./VoiceCall"
 import { Brand } from "./Brand"
 import { ThemeToggle } from "./ThemeToggle"
 import Hls from "hls.js"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom"
 import { Channel, Socket } from "phoenix"
 import { Link, useParams } from "react-router"
@@ -32,6 +32,7 @@ function WatchSession({ code }: { code: string }) {
   const ytRef = useRef<YtPlayer | null>(null)
   const hlsRef = useRef<Hls | null>(null)
   const channelRef = useRef<Channel | null>(null)
+  const reactionTimesRef = useRef<number[]>([])
   const stateRef = useRef<Snapshot | null>(null)
   const roleRef = useRef("viewer")
   const clockRef = useRef<number | null>(null)
@@ -83,7 +84,7 @@ function WatchSession({ code }: { code: string }) {
   const [countdown, setCountdown] = useState(0)
   const [ready, setReady] = useState(false)
   const [readiness, setReadiness] = useState<Record<string, boolean>>({})
-  const [reactions, setReactions] = useState<{ id: string; emoji: string; display_name: string }[]>([])
+  const [reactions, setReactions] = useState<{ id: string; emoji: string; display_name: string; at: number; burst: boolean; dx: number; dy: number }[]>([])
   const [playlist, setPlaylist] = useState<Playlist[]>([])
   const [startPending, setStartPending] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
@@ -200,7 +201,24 @@ function WatchSession({ code }: { code: string }) {
         setPeople(Object.entries(presence).map(([id, item]) => ({ id, display_name: item.metas[0]?.display_name || "Penonton", role: item.metas[0]?.role || "viewer" })))
       })
       channel.on("chat.message", (data) => setChat((items) => [...items.filter((item) => item.id !== data.id), data as unknown as Message].slice(-100)))
-      channel.on("reaction.broadcast", (data) => setReactions((items) => [...items.slice(-7), { id: crypto.randomUUID(), emoji: String(data.emoji), display_name: String(data.display_name) }]))
+      channel.on("reaction.broadcast", (data) => {
+        const now = Date.now()
+        const recent = reactionTimesRef.current.filter((time) => now - time < 900)
+        recent.push(now)
+        reactionTimesRef.current = recent
+        const burst = recent.length >= 3
+        const spread = burst ? 180 + Math.round(Math.random() * 240) : 24 + Math.round(Math.random() * 70)
+        const angle = burst ? Math.random() * Math.PI * 2 : (Math.random() - 0.5)
+        setReactions((items) => [...items.filter((item) => now - item.at < 2200).slice(-23), {
+          id: crypto.randomUUID(),
+          emoji: String(data.emoji),
+          display_name: String(data.display_name || ""),
+          at: now,
+          burst,
+          dx: Math.round(Math.cos(angle) * spread),
+          dy: Math.round((burst ? Math.sin(angle) : -1) * spread),
+        }])
+      })
       channel.on("room.host_changed", () => { setStatus("Host berubah. Menyambungkan ulang…"); window.location.reload() })
       channel.on("room.closed", () => { videoRef.current?.pause(); ytRef.current?.pauseVideo(); window.location.assign("/dashboard") })
       channel.on("room.settings_changed", (data) => {
@@ -441,7 +459,11 @@ function WatchSession({ code }: { code: string }) {
   }, [chat.length])
   useEffect(() => {
     if (!reactions.length) return
-    const timer = window.setTimeout(() => setReactions((items) => items.slice(1)), 2400)
+    const wait = Math.max(0, reactions[0].at + 2200 - Date.now())
+    const timer = window.setTimeout(() => {
+      const cutoff = Date.now() - 2100
+      setReactions((items) => items.filter((item) => item.at > cutoff))
+    }, wait)
     return () => window.clearTimeout(timer)
   }, [reactions])
 
@@ -630,7 +652,7 @@ function WatchSession({ code }: { code: string }) {
             {!playback && !processing ? <div className="player-message"><div><h2>{!snapshot ? "Menghubungkan ke ruang…" : snapshot.media_id ? "Menyiapkan pemutar…" : "Host belum memilih film"}</h2><p>{!snapshot || snapshot.media_id ? status : "Pilih film dari pengaturan ruang untuk mulai menonton."}</p></div></div> : null}
             {loading && playback && !countdown ? <span className="player-loading"><i /> Memuat buffer</span> : null}
             {blocked ? <button className="activate-player" onClick={() => { changeVolume(volume, false); void activatePlayer().then((ok) => { if (ok) tickRef.current() }) }}>Siap Nonton — Aktifkan Player</button> : null}
-            <div className="reaction-overlay" aria-live="off">{reactions.map((item) => <span key={item.id} className="animate-float-up" title={item.display_name}>{item.emoji}</span>)}</div>
+            <div className="reaction-overlay" aria-hidden="true">{reactions.map((item) => <span key={item.id} className={item.burst ? "reaction-pop burst" : "reaction-pop"} style={{ "--dx": `${item.dx}px`, "--dy": `${item.dy}px` } as CSSProperties}>{item.emoji}{item.burst || !item.display_name ? null : <small>{item.display_name}</small>}</span>)}</div>
             <div className="player-controls">
               <input aria-label={canControl ? "Posisi pemutaran bersama" : "Posisi film, dikendalikan host"} className="timeline" type="range" min={0} max={duration || 1} step={1000} value={Math.min(position, duration || 1)} disabled={!canControl || !connected} onChange={(event) => command("playback.seek", { position_ms: Number(event.target.value) })} />
               <div className="control-row">
