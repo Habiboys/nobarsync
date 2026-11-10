@@ -2,6 +2,7 @@ import { useSession } from "./session"
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router"
 import { Admin, CreateRoom, Dashboard, Join, Landing, Library, Lobby, Login, Profile, QuickJoin, Register } from "./pages"
 import { lazy, Suspense } from "react"
+import { ActivityProvider } from "./ActivityProvider"
 const WatchRoom = lazy(() => import("./watch").then((module) => ({ default: module.WatchRoom })))
 
 function RequireLogin() {
@@ -15,7 +16,7 @@ function RequireLogin() {
 
 export function App() {
   return (
-    <Routes>
+    <ActivityProvider><Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
@@ -31,6 +32,6 @@ export function App() {
       <Route path="/profile" element={<Profile />} />
       <Route path="/admin" element={<Admin />} />
       </Route>
-    </Routes>
+    </Routes></ActivityProvider>
   )
 }

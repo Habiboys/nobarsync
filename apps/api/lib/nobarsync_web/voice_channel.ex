@@ -75,6 +75,13 @@ defmodule NobarSyncWeb.VoiceChannel do
     do: {:stop, :normal, socket}
 
   def handle_info(
+        %Phoenix.Socket.Broadcast{event: "room.member_left", payload: %{member_id: id}},
+        socket
+      ) do
+    if id == socket.assigns.member_id, do: {:stop, :normal, socket}, else: {:noreply, socket}
+  end
+
+  def handle_info(
         %Phoenix.Socket.Broadcast{event: "room.error", payload: %{code: "kicked", member_id: id}},
         socket
       ) do

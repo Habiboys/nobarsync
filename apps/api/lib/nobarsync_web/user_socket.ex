@@ -4,6 +4,7 @@ defmodule NobarSyncWeb.UserSocket do
   channel "voice:*", NobarSyncWeb.VoiceChannel
   channel "room:*", NobarSyncWeb.RoomChannel
   channel "user:*", NobarSyncWeb.UserChannel
+  channel "observe:*", NobarSyncWeb.ObserverChannel
 
   @impl true
   def connect(%{"token" => token}, socket, _info) do

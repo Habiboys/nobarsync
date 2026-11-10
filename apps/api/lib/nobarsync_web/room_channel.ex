@@ -5,7 +5,7 @@ defmodule NobarSyncWeb.RoomChannel do
   alias NobarSync.WatchRooms
   alias NobarSyncWeb.Presence
 
-  intercept ["presence_diff"]
+  intercept ["presence_diff", "room.member_left"]
 
   def join("room:" <> room_id, payload, socket) do
     actor = actor(socket)
@@ -53,6 +53,15 @@ defmodule NobarSyncWeb.RoomChannel do
     push(socket, "room.presence", %{v: 1, presence: Presence.list(socket)})
     sync_presence(socket)
     {:noreply, socket}
+  end
+
+  def handle_out("room.member_left", %{member_id: id}, socket) do
+    if id == socket.assigns.member_id do
+      push(socket, "room.error", %{code: "left", member_id: id})
+      {:stop, :normal, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_in("clock.ping", payload, socket) do
@@ -192,6 +201,10 @@ defmodule NobarSyncWeb.RoomChannel do
 
     RoomCoordinator.presence(socket.assigns.room_id, members)
     WatchRooms.mark_occupancy(socket.assigns.room_id, length(members))
+
+    NobarSync.Playback.Broadcaster.broadcast("monitor:changes", "room.changed", %{
+      room_id: socket.assigns.room_id
+    })
   end
 
   defp actor(socket) do
@@ -203,6 +216,14 @@ defmodule NobarSyncWeb.RoomChannel do
 
     %{user: user, guest: guest}
   end
+
+  def terminate(_reason, %{assigns: %{member_id: id}} = socket) do
+    Presence.untrack(socket, id)
+    sync_presence(socket)
+    :ok
+  end
+
+  def terminate(_, _), do: :ok
 
   defp safe_room(id) do
     try do

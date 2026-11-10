@@ -370,7 +370,7 @@ defmodule NobarSync.Media do
   def create_url_import(user, attrs) do
     url = attrs["url"] || ""
 
-    with :ok <- NobarSync.Media.UrlImport.allowed?(url) do
+    with {:ok, source_url} <- NobarSync.Media.UrlImport.resolve(url) do
       {:ok, asset} =
         %Asset{}
         |> Asset.changeset(%{
@@ -379,7 +379,7 @@ defmodule NobarSync.Media do
           status: "queued",
           source_type: "url",
           provider: "r2_hls",
-          source_url: url
+          source_url: source_url
         })
         |> put_publication(attrs)
         |> Repo.insert()

@@ -40,6 +40,30 @@ defmodule NobarSyncWeb.RoomChannelTest do
     assert_reply ref, :error, %{code: "forbidden"}
   end
 
+  test "room detail keeps people who are connected to the player", %{socket: socket, room: room} do
+    {:ok, _, socket} = subscribe_and_join(socket, "room:#{room.id}", %{})
+    assert_push "room.presence", _
+    assert [%{display_name: "Viewer"}] = NobarSyncWeb.LiveBoard.people(room.id)
+    assert length(WatchRooms.list_members(room.id)) == 2
+    connected = NobarSyncWeb.LiveBoard.admin()
+    watching = Enum.find(connected.people, &(&1.room_code == room.code))
+    assert watching.display_name == "Viewer"
+    assert Enum.find(connected.rooms, &(&1.code == room.code)).online
+
+    Process.unlink(socket.channel_pid)
+    ref = leave(socket)
+    assert_reply ref, :ok
+    await_departure(room.id)
+
+    assert NobarSyncWeb.LiveBoard.people(room.id) == []
+    assert length(WatchRooms.list_members(room.id)) == 2
+    board = NobarSyncWeb.LiveBoard.admin()
+    listed = Enum.find(board.rooms, &(&1.code == room.code))
+    assert listed.online == false
+    assert listed.playback.status == "idle"
+    assert listed.playback.position_ms == 0
+  end
+
   test "clock ping echoes the client sample", %{socket: socket, room: room} do
     {:ok, _, socket} = subscribe_and_join(socket, "room:#{room.id}", %{})
     ref = push(socket, "clock.ping", %{"t0" => 12.5})
@@ -59,5 +83,111 @@ defmodule NobarSyncWeb.RoomChannelTest do
     actor = %{user: nil, guest: result.guest}
     assert {:error, :unauthorized} = WatchRooms.join(room, actor, nil)
     assert is_nil(WatchRooms.active_member(room.id, actor))
+  end
+
+  test "admin monitoring reads authoritative film and timeline without joining", %{
+    room: room,
+    socket: socket
+  } do
+    user = Accounts.get_user(socket.assigns.user_id)
+
+    {:ok, film} =
+      NobarSync.Media.create_youtube(user, %{
+        "url" => "https://youtu.be/aqz-KE-bpKQ",
+        "title" => "Film uji waktu"
+      })
+
+    {:ok, pid} = NobarSync.Playback.RoomCoordinator.ensure_started(room.id)
+    now = System.os_time(:millisecond)
+
+    :sys.replace_state(pid, fn state ->
+      Map.merge(state, %{
+        media_id: film.id,
+        duration_ms: 600_000,
+        status: :playing,
+        anchor_position_ms: 120_000,
+        anchor_wall_ms: now - 3000,
+        anchor_mono_ms: System.monotonic_time(:millisecond) - 3000
+      })
+    end)
+
+    monitored = Enum.find(NobarSyncWeb.LiveBoard.admin().rooms, &(&1.id == room.id))
+    assert monitored.media_title == "Film uji waktu"
+    assert monitored.playback.status == "playing"
+    assert monitored.playback.position_ms >= 123_000 and monitored.playback.position_ms < 125_000
+    assert monitored.playback.duration_ms == 600_000
+    assert monitored.people == []
+
+    :sys.replace_state(pid, fn state ->
+      %{state | status: :paused, anchor_position_ms: 125_000}
+    end)
+
+    assert Enum.find(NobarSyncWeb.LiveBoard.admin().rooms, &(&1.id == room.id)).playback.position_ms ==
+             125_000
+
+    NobarSync.Playback.RoomCoordinator.stop(room.id)
+  end
+
+  test "online accounts include non-watch pages and hide query strings", %{socket: socket} do
+    id = socket.assigns.user_id
+    {:ok, _, own} = subscribe_and_join(socket, "user:#{id}", %{})
+    ref = push(own, "activity.page", %{"page" => "/library"})
+    assert_reply ref, :ok
+    user = Enum.find(NobarSyncWeb.LiveBoard.admin().users, &(&1.id == id))
+    assert user.tabs == 1
+    assert user.pages == ["/library"]
+    ref = push(own, "activity.page", %{"page" => "/library?secret=hidden"})
+    assert_reply ref, :ok
+    assert Enum.find(NobarSyncWeb.LiveBoard.admin().users, &(&1.id == id)).pages == ["/library"]
+    assert {:error, %{code: "forbidden"}} = subscribe_and_join(socket, "observe:admin", %{})
+  end
+
+  test "room observers see updates without being counted as participants", %{
+    socket: socket,
+    room: room
+  } do
+    {:ok, _, observer} = subscribe_and_join(socket, "observe:room:#{room.code}", %{})
+    NobarSync.Playback.Broadcaster.broadcast("room:#{room.id}", "presence_diff", %{})
+    assert_push "activity.changed", %{}, 500
+    assert NobarSyncWeb.LiveBoard.people(room.id) == []
+    Process.unlink(observer.channel_pid)
+    ref = leave(observer)
+    assert_reply ref, :ok
+  end
+
+  test "explicit room leave closes the player's channel even when tab remains open", %{
+    socket: socket,
+    room: room
+  } do
+    {:ok, _, joined} = subscribe_and_join(socket, "room:#{room.id}", %{})
+    assert_push "room.presence", _
+    user = Accounts.get_user(socket.assigns.user_id)
+    {:ok, member} = WatchRooms.leave(room, %{user: user, guest: nil})
+    assert NobarSyncWeb.LiveBoard.people(room.id) == []
+    Process.unlink(joined.channel_pid)
+    ref = Process.monitor(joined.channel_pid)
+
+    NobarSync.Playback.Broadcaster.broadcast("room:#{room.id}", "room.member_left", %{
+      member_id: member.id
+    })
+
+    assert_push "room.error", %{code: "left"}
+    assert_receive {:DOWN, ^ref, :process, _, :normal}
+    assert NobarSyncWeb.Presence.list("room:#{room.id}") == %{}
+  end
+
+  defp await_departure(room_id, attempts \\ 20)
+
+  defp await_departure(room_id, 0) do
+    flunk("presence still lists #{inspect(NobarSyncWeb.LiveBoard.people(room_id))}")
+  end
+
+  defp await_departure(room_id, attempts) do
+    if NobarSyncWeb.LiveBoard.people(room_id) == [] do
+      :ok
+    else
+      Process.sleep(50)
+      await_departure(room_id, attempts - 1)
+    end
   end
 end

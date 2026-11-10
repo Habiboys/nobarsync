@@ -35,7 +35,8 @@ defmodule NobarSyncWeb.RoomController do
       room ->
         json(conn, %{
           room: public_room(room),
-          members: Enum.map(WatchRooms.list_members(room.id), &member_json/1)
+          members: NobarSyncWeb.LiveBoard.people(room.id),
+          membership: membership_json(room, conn)
         })
     end
   end
@@ -52,7 +53,9 @@ defmodule NobarSyncWeb.RoomController do
 
   def leave(conn, %{"code" => code}) do
     with %{} = room <- WatchRooms.get_room_by_code(code),
-         {:ok, _} <- WatchRooms.leave(room, actor(conn)) do
+         {:ok, member} <- WatchRooms.leave(room, actor(conn)) do
+      Broadcaster.broadcast("room:#{room.id}", "room.member_left", %{member_id: member.id})
+      Broadcaster.broadcast("monitor:changes", "room.changed", %{room_id: room.id})
       json(conn, %{ok: true})
     else
       nil -> {:error, :not_found}
@@ -334,6 +337,13 @@ defmodule NobarSyncWeb.RoomController do
   end
 
   defp public_room(room), do: room_json(room)
+
+  defp membership_json(room, conn) do
+    case WatchRooms.active_member(room.id, actor(conn)) do
+      nil -> nil
+      member -> member_json(member)
+    end
+  end
 
   defp member_json(member) do
     %{

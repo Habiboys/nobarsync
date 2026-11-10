@@ -60,6 +60,8 @@ defmodule NobarSyncWeb.AdminController do
     })
   end
 
+  def live(conn, _), do: json(conn, NobarSyncWeb.LiveBoard.admin())
+
   def rooms(conn, _) do
     json(conn, %{
       rooms: Enum.map(WatchRooms.list_open_rooms(), &NobarSyncWeb.RoomController.room_json/1)

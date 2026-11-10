@@ -95,6 +95,7 @@ defmodule NobarSyncWeb.Router do
       get "/media", AdminController, :media
       patch "/media/:id", AdminController, :update_media
       delete "/media/:id", AdminController, :delete_media
+      get "/live", AdminController, :live
       get "/rooms", AdminController, :rooms
       get "/jobs", AdminController, :jobs
       get "/metrics", AdminController, :metrics

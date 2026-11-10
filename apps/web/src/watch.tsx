@@ -228,6 +228,7 @@ function WatchSession({ code }: { code: string }) {
         if (updated?.chat_permission) setChatPermission(updated.chat_permission)
       })
       channel.on("room.error", (data) => {
+        if (data.code === "left" && data.member_id === memberRef.current) { window.location.assign("/dashboard"); return }
         if (data.code === "kicked" && data.member_id === memberRef.current) { window.location.assign("/join"); return }
         setStatus(String(data.message || data.code))
       })
@@ -324,12 +325,13 @@ function WatchSession({ code }: { code: string }) {
     if (!isYoutube || !playback?.playback.youtube_id) return
     let stopped = false
     const id = playback.playback.youtube_id
+    let pendingPlayer: YtPlayer | null = null
     function create() {
       if (stopped || !window.YT || !ytNodeRef.current) return
       const node = document.createElement("div")
       ytNodeRef.current.replaceChildren(node)
-      ytRef.current = new window.YT.Player(node, { videoId: id, playerVars: { controls: 0, disablekb: 1, playsinline: 1, rel: 0 }, events: {
-        onReady: () => { bufferingRef.current = false; setLoading(false); applyFilmRef.current(); tickRef.current() },
+      pendingPlayer = new window.YT.Player(node, { videoId: id, playerVars: { controls: 0, disablekb: 1, playsinline: 1, rel: 0 }, events: {
+        onReady: () => { if (stopped) return; ytRef.current = pendingPlayer; bufferingRef.current = false; setLoading(false); applyFilmRef.current(); tickRef.current() },
         onStateChange: (event: { data: number }) => {
           bufferingRef.current = event.data === 3
           setLoading(event.data === 3)
@@ -345,7 +347,7 @@ function WatchSession({ code }: { code: string }) {
         const script = document.createElement("script"); script.src = "https://www.youtube.com/iframe_api"; document.body.appendChild(script)
       }
     }
-    return () => { stopped = true; ytRef.current?.destroy(); ytRef.current = null; window.onYouTubeIframeAPIReady = undefined }
+    return () => { stopped = true; ytRef.current = null; pendingPlayer?.destroy(); window.onYouTubeIframeAPIReady = undefined }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isYoutube, playback?.playback.youtube_id])
 

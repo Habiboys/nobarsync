@@ -1,4 +1,6 @@
 import { AdminConsole } from "./AdminConsole"
+import { UrlImportForm } from "./UrlImportForm"
+import { useActivityUpdates } from "./activity"
 import { Brand } from "./Brand"
 import { ThemeToggle } from "./ThemeToggle"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -423,7 +425,7 @@ function UploadForm() {
         }}>
           <Field label="URL YouTube" name="url" placeholder="https://www.youtube.com/watch?v=..." />
           <Button type="submit">Tambahkan YouTube</Button>
-        </form> : <form className="mt-5 space-y-3" onSubmit={(event) => { event.preventDefault(); const url = String(new FormData(event.currentTarget).get("source_url") || "").trim(); if (!url) return; void api("/api/v1/media/import-url", { method: "POST", body: JSON.stringify({ url, title: title || "Impor video", audience }) }).then(() => { push(audience === "library" ? "Impor diajukan. Setelah diolah, admin yang memutuskan." : "Impor masuk antrean pengolahan, hanya untuk kamu."); void client.invalidateQueries({ queryKey: ["media"] }) }).catch((error: Error) => push(error.message)) }}><Field label="URL video langsung" name="source_url" type="url" required placeholder="https://domain-diizinkan/video.mp4" /><p className="form-note">Gunakan domain yang diizinkan pengelola. Untuk YouTube, pilih sumber YouTube.</p><Button type="submit">Impor video</Button></form>}
+        </form> : <UrlImportForm title={title} audience={audience} busy={busy} setBusy={setBusy} />}
     </div>
   )
 }
@@ -528,13 +530,16 @@ export function QuickJoin() {
 
 export function Lobby() {
   const { code = "" } = useParams()
+  useActivityUpdates(code ? `observe:room:${code}` : null, ["room", code])
   const navigate = useNavigate()
   const session = useSession()
   const client = useQueryClient()
   const push = useToasts((state) => state.push)
   const room = useQuery({
     queryKey: ["room", code],
-    queryFn: () => api<{ room: Room; members: Member[] }>(`/api/v1/rooms/${code}`),
+    queryFn: () => api<{ room: Room; members: Member[]; membership: Member | null }>(`/api/v1/rooms/${code}`),
+    refetchInterval: 3000,
+    refetchIntervalInBackground: false,
   })
   const media = useQuery({
     queryKey: ["media", "lobby"],
@@ -543,7 +548,7 @@ export function Lobby() {
   })
   if (room.error instanceof Error) return <Shell><p>{room.error.message}</p></Shell>
   if (!room.data) return <Shell><p>Memuat ruang...</p></Shell>
-  const mine = room.data.members.find((member) => member.user_id && member.user_id === session.data?.user?.id)
+  const mine = room.data.membership
   const host = mine?.role === "host" || session.data?.user?.role === "admin"
   async function run(path: string, method: string, body?: object) {
     try {
@@ -562,16 +567,20 @@ export function Lobby() {
         <p className="mt-1 font-display text-4xl tracking-[0.25em] text-amber">{room.data.room.code}</p>
         <p className="mt-1 text-sm text-mist">{room.data.room.status === "open" ? "Terbuka" : "Ditutup"} · {room.data.room.locked ? "dikunci" : "terbuka untuk anggota"}</p>
         <p className="mt-2 text-sm">Film: {(media.data?.items || []).find((item) => item.id === room.data?.room.media_id)?.title || (room.data.room.media_id ? "sudah dipasang" : "belum dipilih")}</p>
-        <ul className="my-4 space-y-2">
-          {room.data.members.map((member) => (
-            <li key={member.id} className="flex items-center justify-between gap-3">
-              <span>{member.display_name} · {member.role}</span>
-              {host && member.role !== "host" ? (
-                <Button tone="ghost" onClick={() => run(`/api/v1/rooms/${code}/kick`, "POST", { member_id: member.id })}>Keluarkan</Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <div className="my-4">
+          <h2 className="text-lg font-semibold">Sedang di pemutar</h2>
+          <p className="text-sm text-mist" role="status">{room.data.members.length ? `${room.data.members.length} orang sedang menonton.` : "Belum ada yang masuk pemutar."}</p>
+          <ul className="mt-3 space-y-2">
+            {room.data.members.map((member) => (
+              <li key={member.id} className="flex items-center justify-between gap-3">
+                <span>{member.display_name} · {member.role === "host" ? "Host" : member.role === "moderator" ? "Moderator" : "Penonton"}</span>
+                {host && member.role !== "host" ? (
+                  <Button tone="ghost" onClick={() => run(`/api/v1/rooms/${code}/kick`, "POST", { member_id: member.id })}>Keluarkan</Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
         <div className="flex flex-wrap gap-2">
           {room.data.room.status === "open" ? <Link className="button button-primary" to={`/watch/${room.data.room.code}`}>Masuk pemutar</Link> : null}
           <Button tone="ghost" onClick={() => run(`/api/v1/rooms/${code}/leave`, "POST", {}).then((ok) => { if (ok) navigate("/dashboard") })}>Keluar</Button>

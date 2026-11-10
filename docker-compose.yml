@@ -96,6 +96,8 @@ services:
     environment:
       MIX_ENV: dev
       NOBARSYNC_ROLE: api
+      IMPORT_HOST_ALLOWLIST: ${IMPORT_HOST_ALLOWLIST:-}
+      IMPORT_MAX_BYTES: ${IMPORT_MAX_BYTES:-2147483648}
       TURN_URLS: ${TURN_URLS:-}
       TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:-}
       POSTGRES_HOST: postgres
@@ -143,6 +145,8 @@ services:
     environment:
       MIX_ENV: dev
       NOBARSYNC_ROLE: worker
+      IMPORT_HOST_ALLOWLIST: ${IMPORT_HOST_ALLOWLIST:-}
+      IMPORT_MAX_BYTES: ${IMPORT_MAX_BYTES:-2147483648}
       PHX_SERVER: "true"
       POSTGRES_HOST: postgres
       POSTGRES_USER: ${POSTGRES_USER:-nobarsync}

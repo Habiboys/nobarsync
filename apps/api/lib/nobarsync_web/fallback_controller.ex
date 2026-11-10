@@ -55,6 +55,69 @@ defmodule NobarSyncWeb.FallbackController do
   def call(conn, {:error, :forbidden_source}),
     do: error(conn, 403, "forbidden", "Sumber URL tidak diizinkan")
 
+  def call(conn, {:error, :invalid_source_url}),
+    do:
+      error(
+        conn,
+        422,
+        "invalid_source_url",
+        "Masukkan URL HTTPS yang lengkap, tanpa tanda kutip atau spasi tambahan."
+      )
+
+  def call(conn, {:error, :source_host_not_allowed}),
+    do:
+      error(
+        conn,
+        403,
+        "source_host_not_allowed",
+        "Domain sumber belum diizinkan. Admin perlu menambahkannya ke IMPORT_HOST_ALLOWLIST pada API dan worker."
+      )
+
+  def call(conn, {:error, :unsupported_player_page}),
+    do:
+      error(
+        conn,
+        422,
+        "unsupported_player_page",
+        "Tautan ini membuka halaman player yang tidak menyediakan sumber video HTML5 langsung. Gunakan URL berkas video dari penyedia atau unggah berkasnya."
+      )
+
+  def call(conn, {:error, :unsupported_source_type}),
+    do:
+      error(
+        conn,
+        422,
+        "unsupported_source_type",
+        "Sumber bukan berkas video yang didukung. Gunakan MP4, WebM, MKV, atau berkas video lain; playlist HLS/DASH dan iframe belum didukung untuk impor."
+      )
+
+  def call(conn, {:error, :source_too_large}),
+    do:
+      error(
+        conn,
+        422,
+        "source_too_large",
+        "Ukuran video melebihi batas impor server (IMPORT_MAX_BYTES)."
+      )
+
+  def call(conn, {:error, :source_unreachable}),
+    do:
+      error(
+        conn,
+        422,
+        "source_unreachable",
+        "Sumber video tidak dapat diakses oleh server. Pastikan tautan masih aktif dan tidak memerlukan login."
+      )
+
+  def call(conn, {:error, :too_many_redirects}),
+    do:
+      error(
+        conn,
+        422,
+        "too_many_redirects",
+        "Tautan sumber terlalu banyak mengalihkan alamat. Gunakan URL video akhirnya."
+      )
+
   defp error(conn, status, code, message) do
     conn |> put_status(status) |> json(%{error: %{code: code, message: message, details: %{}}})
   end

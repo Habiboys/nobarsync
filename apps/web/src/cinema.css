@@ -1,6 +1,7 @@
 .app-shell { width: min(100%, 1380px); margin: auto; padding: 0 20px 48px; }
 .brand { display: inline-flex; align-items: center; text-decoration: none; }
 .brand img { display: block; height: 42px; width: auto; }
+:root[data-theme="dark"] .brand img { filter: brightness(0) invert(1); }
 .app-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 88px; border-bottom: 1px solid var(--color-line); margin-bottom: 32px; }
 .desktop-nav { display: none; }
 .header-tools { display: flex; align-items: center; gap: 10px; }
@@ -173,6 +174,12 @@
 .admin-tabs button { min-height: 48px; padding: 10px 2px; white-space: nowrap; color: var(--color-mist); border-bottom: 2px solid transparent; }
 .admin-tabs button:hover { color: var(--color-ink); }
 .admin-tabs button[aria-selected="true"] { color: var(--color-ink); font-weight: 600; border-bottom-color: var(--accent-ink); }
+.live-rooms { display: grid; gap: 16px; margin-top: 16px; }
+.live-person { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--color-line); }
+.live-person span, .live-person small { min-width: 0; overflow-wrap: anywhere; }
+.live-person small, .live-room p { color: var(--color-mist); }
+.live-room h3 { font-size: 1.05rem; font-weight: 600; }
+.live-room ul { margin-top: 10px; }
 .account-status.active { color: var(--success); }
 .account-status.suspended { color: var(--warning); }
 .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 20px; font-size: .8rem; color: var(--color-mist); }
