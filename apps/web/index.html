@@ -5,9 +5,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#111512" />
     <link rel="icon" type="image/png" href="/manonton.png" />
-    <meta name="description" content="Manonton: buat ruang, pilih film, dan nonton bersama teman dengan pemutaran tersinkron." />
-    <title>Manonton | Nonton bersama</title>
+    <title>Manonton - Nonton Bareng Online Gratis</title>
+    <meta name="description" content="Nonton bareng online gratis di Manonton. Buat ruang, undang teman, dan putar film atau YouTube bersama dengan sinkronisasi, chat, dan voice call." />
+    <meta name="application-name" content="Manonton" />
+    <meta name="apple-mobile-web-app-title" content="Manonton" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://manonton.neotelemetri.id/" />
+    <link rel="sitemap" type="application/xml" href="https://manonton.neotelemetri.id/sitemap.xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="id_ID" />
+    <meta property="og:site_name" content="Manonton" />
+    <meta property="og:title" content="Manonton - Nonton Bareng Online Gratis" />
+    <meta property="og:description" content="Nonton bareng online gratis di Manonton. Buat ruang, undang teman, dan putar film atau YouTube bersama dengan sinkronisasi, chat, dan voice call." />
+    <meta property="og:url" content="https://manonton.neotelemetri.id/" />
+    <meta property="og:image" content="https://manonton.neotelemetri.id/manonton.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="2172" />
+    <meta property="og:image:height" content="724" />
+    <meta property="og:image:alt" content="Logo Manonton" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Manonton - Nonton Bareng Online Gratis" />
+    <meta name="twitter:description" content="Nonton bareng online gratis di Manonton. Buat ruang, undang teman, dan putar film atau YouTube bersama dengan sinkronisasi, chat, dan voice call." />
+    <meta name="twitter:image" content="https://manonton.neotelemetri.id/manonton.png" />
+    <meta name="twitter:image:alt" content="Logo Manonton" />
+    <script type="application/ld+json" id="website-schema">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "@id": "https://manonton.neotelemetri.id/#website",
+        "url": "https://manonton.neotelemetri.id/",
+        "name": "Manonton",
+        "description": "Nonton bareng online gratis dengan pemutaran tersinkron, chat, dan voice call.",
+        "inLanguage": "id-ID"
+      }
+    </script>
     <script>
+      if (location.pathname !== "/") {
+        document.querySelector('meta[name="robots"]').content = "noindex, nofollow";
+      }
       try {
         const stored = localStorage.getItem("manonton-theme");
         document.documentElement.dataset.theme = stored === "light" || stored === "dark" ? stored : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

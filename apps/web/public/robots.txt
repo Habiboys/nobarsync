@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /media/
+Disallow: /socket
+Disallow: /health/
+
+Sitemap: https://manonton.neotelemetri.id/sitemap.xml

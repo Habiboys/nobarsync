@@ -1,5 +1,7 @@
 :80 {
 	encode gzip
+	@private path /login /register /dashboard /library /upload /join /profile /admin /admin/* /rooms /rooms/* /watch /watch/* /j /j/*
+	header @private X-Robots-Tag "noindex, nofollow"
 	@api path /api/* /socket* /media/* /health*
 	handle @api {
 		reverse_proxy api:4000
