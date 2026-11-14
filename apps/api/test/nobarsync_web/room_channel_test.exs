@@ -176,6 +176,94 @@ defmodule NobarSyncWeb.RoomChannelTest do
     assert NobarSyncWeb.Presence.list("room:#{room.id}") == %{}
   end
 
+  test "chat supports reply, edit, delete, reactions, pin, and authorization", %{
+    socket: viewer_socket,
+    room: room
+  } do
+    host = Accounts.get_user(room.host_user_id)
+
+    host_token =
+      Phoenix.Token.sign(NobarSyncWeb.Endpoint, "socket", Accounts.socket_claims(host))
+
+    {:ok, host_socket} = connect(UserSocket, %{"token" => host_token})
+    {:ok, _, host_channel} = subscribe_and_join(host_socket, "room:#{room.id}", %{})
+    {:ok, _, viewer_channel} = subscribe_and_join(viewer_socket, "room:#{room.id}", %{})
+
+    ref = push(host_channel, "chat.send", %{"body" => "Halo semua"})
+    assert_reply ref, :ok, host_msg
+    assert host_msg.body == "Halo semua"
+    assert_broadcast "chat.message", %{id: host_msg_id, body: "Halo semua"}
+    assert host_msg_id == host_msg.id
+
+    # Viewer replies to host's message
+    ref =
+      push(viewer_channel, "chat.send", %{
+        "body" => "Halo juga!",
+        "reply_to_id" => host_msg.id
+      })
+
+    assert_reply ref, :ok, reply_msg
+    assert reply_msg.reply_to.id == host_msg.id
+    assert reply_msg.reply_to.body == "Halo semua"
+
+    # Viewer cannot edit host's message
+    ref = push(viewer_channel, "chat.edit", %{"id" => host_msg.id, "body" => "Diubah orang"})
+    assert_reply ref, :error, %{code: "forbidden"}
+
+    # Viewer edits own message
+    ref = push(viewer_channel, "chat.edit", %{"id" => reply_msg.id, "body" => "Halo kak!"})
+    assert_reply ref, :ok, edited_msg
+    assert edited_msg.body == "Halo kak!"
+    assert edited_msg.edited_at != nil
+    assert_broadcast "chat.edited", %{id: edited_id, body: "Halo kak!"}
+    assert edited_id == reply_msg.id
+
+    # Viewer toggles reaction on host's message
+    ref = push(viewer_channel, "chat.react", %{"id" => host_msg.id, "emoji" => "👍"})
+    assert_reply ref, :ok
+    assert_broadcast "chat.reacted", %{id: reacted_id, reactions: [%{emoji: "👍", count: 1}]}
+    assert reacted_id == host_msg.id
+
+    ref = push(viewer_channel, "chat.react", %{"id" => host_msg.id, "emoji" => "👍"})
+    assert_reply ref, :ok
+    assert_broadcast "chat.reacted", %{id: ^reacted_id, reactions: []}
+
+    # Viewer cannot pin, host can pin
+    ref = push(viewer_channel, "chat.pin", %{"id" => host_msg.id, "pinned" => true})
+    assert_reply ref, :error, %{code: "forbidden"}
+
+    ref = push(host_channel, "chat.pin", %{"id" => host_msg.id, "pinned" => true})
+    assert_reply ref, :ok
+    assert_broadcast "chat.pinned", %{message: %{id: ^host_msg_id}}
+
+    # Viewer cannot delete host's message, host can delete viewer's message
+    ref = push(viewer_channel, "chat.delete", %{"id" => host_msg.id})
+    assert_reply ref, :error, %{code: "forbidden"}
+
+    ref = push(host_channel, "chat.delete", %{"id" => reply_msg.id})
+    assert_reply ref, :ok
+    assert_broadcast "chat.deleted", %{id: deleted_id}
+    assert deleted_id == reply_msg.id
+
+    # Host deletes own message; replies to it show deleted placeholder and listing omits deleted
+    ref =
+      push(viewer_channel, "chat.send", %{
+        "body" => "Balas pesan yang akan dihapus",
+        "reply_to_id" => host_msg.id
+      })
+
+    assert_reply ref, :ok, dangling_reply
+    ref = push(host_channel, "chat.delete", %{"id" => host_msg.id})
+    assert_reply ref, :ok
+
+    {messages, _has_more} = NobarSync.Messaging.list_messages_page(room.id)
+    serialized = Enum.map(messages, &NobarSync.Messaging.serialize_message/1)
+    assert Enum.map(serialized, & &1.id) == [dangling_reply.id]
+    assert hd(serialized).reply_to.deleted == true
+    assert hd(serialized).reply_to.body == ""
+    assert is_nil(NobarSync.Messaging.get_pinned_message(room.id))
+  end
+
   defp await_departure(room_id, attempts \\ 20)
 
   defp await_departure(room_id, 0) do

@@ -39,14 +39,14 @@ Clients keep `state` until `serverNow >= effective_at_ms`, then apply `pending`.
 - `playback.countdown` schedules play with a 3000 ms lead.
 - `playback.heartbeat` `{ "drift_ms", "buffer_ms", "duration_ms" }` is metrics only.
 - `player.ready`, `player.buffering`.
-- `chat.send` `{ "body" }`, `reaction.send` `{ "emoji" }`.
+- `chat.send` `{ "body", "reply_to_id?" }`, `chat.edit` `{ "id", "body" }`, `chat.delete` `{ "id" }`, `chat.react` `{ "id", "emoji" }`, `chat.pin` `{ "id", "pinned" }`, `chat.typing` `{ "typing" }`, `reaction.send` `{ "emoji" }`.
 
 ## Server to client
 
 - `playback.state` after every accepted command.
 - `room.presence` with a Presence list.
 - `room.media_changed`, `room.settings_changed`, `room.host_changed`.
-- `chat.message`, `reaction.broadcast`.
+- `chat.message`, `chat.edited`, `chat.deleted`, `chat.reacted`, `chat.pinned`, `chat.typing`, `reaction.broadcast`.
 - `room.error`.
 
 Socket auth is a Phoenix token from `POST /api/v1/auth/socket-token`, max age 120 seconds. The client refreshes it by reconnecting.

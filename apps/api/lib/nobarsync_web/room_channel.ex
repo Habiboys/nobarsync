@@ -101,24 +101,106 @@ defmodule NobarSyncWeb.RoomChannel do
   end
 
   def handle_in("chat.send", payload, socket) do
-    room = WatchRooms.get_room!(socket.assigns.room_id)
-    member = NobarSync.Repo.get!(NobarSync.WatchRooms.Member, socket.assigns.member_id)
+    with {:ok, room, member} <- active_chat_actor(socket),
+         {:ok, message} <-
+           NobarSync.Messaging.send_message(room, member, payload["body"], %{
+             reply_to_id: payload["reply_to_id"]
+           }) do
+      serialized = NobarSync.Messaging.serialize_message(message)
+      broadcast!(socket, "chat.message", serialized)
+      {:reply, {:ok, serialized}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{code: to_string(reason)}}, socket}
+    end
+  end
 
-    case NobarSync.Messaging.send_message(room, member, payload["body"]) do
-      {:ok, message} ->
-        broadcast!(socket, "chat.message", %{
-          v: 1,
-          id: message.id,
-          body: message.body,
-          display_name: message.display_name,
-          member_id: message.member_id,
-          inserted_at: message.inserted_at
-        })
+  def handle_in("chat.edit", payload, socket) do
+    with {:ok, room, member} <- active_chat_actor(socket),
+         {:ok, message} <-
+           NobarSync.Messaging.edit_message(room, member, payload["id"], payload["body"]) do
+      serialized = NobarSync.Messaging.serialize_message(message)
+      broadcast!(socket, "chat.edited", serialized)
+      {:reply, {:ok, serialized}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{code: to_string(reason)}}, socket}
+    end
+  end
 
-        {:reply, :ok, socket}
+  def handle_in("chat.delete", payload, socket) do
+    with {:ok, room, member} <- active_chat_actor(socket),
+         {:ok, message} <- NobarSync.Messaging.delete_message(room, member, payload["id"]) do
+      broadcast!(socket, "chat.deleted", %{v: 1, id: message.id})
+      {:reply, :ok, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{code: to_string(reason)}}, socket}
+    end
+  end
 
-      {:error, reason} ->
-        {:reply, {:error, %{code: to_string(reason)}}, socket}
+  def handle_in("chat.react", payload, socket) do
+    with {:ok, room, member} <- active_chat_actor(socket),
+         {:ok, result} <-
+           NobarSync.Messaging.toggle_message_reaction(
+             room,
+             member,
+             payload["id"],
+             payload["emoji"]
+           ) do
+      broadcast!(socket, "chat.reacted", %{
+        v: 1,
+        id: result.message_id,
+        reactions: result.reactions
+      })
+
+      {:reply, :ok, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{code: to_string(reason)}}, socket}
+    end
+  end
+
+  def handle_in("chat.pin", payload, socket) do
+    with {:ok, room, member} <- active_chat_actor(socket),
+         {:ok, pinned} <-
+           NobarSync.Messaging.pin_message(
+             room,
+             member,
+             payload["id"],
+             payload["pinned"] != false
+           ) do
+      broadcast!(socket, "chat.pinned", %{
+        v: 1,
+        message: pinned && NobarSync.Messaging.serialize_message(pinned)
+      })
+
+      {:reply, :ok, socket}
+    else
+      {:error, reason} -> {:reply, {:error, %{code: to_string(reason)}}, socket}
+    end
+  end
+
+  def handle_in("chat.typing", payload, socket) do
+    now = System.monotonic_time(:millisecond)
+    last = socket.assigns[:last_typing] || now - 800
+    typing = payload["typing"] == true
+
+    if typing and now - last < 800 do
+      {:noreply, socket}
+    else
+      case active_chat_actor(socket) do
+        {:ok, room, member} ->
+          if NobarSync.Messaging.can_chat?(room, member) do
+            broadcast_from!(socket, "chat.typing", %{
+              v: 1,
+              member_id: member.id,
+              display_name: member.display_name,
+              typing: typing
+            })
+          end
+
+          {:noreply, assign(socket, :last_typing, now)}
+
+        _ ->
+          {:noreply, socket}
+      end
     end
   end
 
@@ -129,21 +211,17 @@ defmodule NobarSyncWeb.RoomChannel do
     if now - last < 140 do
       {:reply, {:error, %{code: "rate_limited"}}, socket}
     else
-      room = WatchRooms.get_room!(socket.assigns.room_id)
-      member = NobarSync.Repo.get!(NobarSync.WatchRooms.Member, socket.assigns.member_id)
+      with {:ok, room, member} <- active_chat_actor(socket),
+           {:ok, reaction} <- NobarSync.Messaging.send_reaction(room, member, emoji) do
+        broadcast!(socket, "reaction.broadcast", %{
+          v: 1,
+          emoji: reaction.emoji,
+          display_name: reaction.display_name
+        })
 
-      case NobarSync.Messaging.send_reaction(room, member, emoji) do
-        {:ok, reaction} ->
-          broadcast!(socket, "reaction.broadcast", %{
-            v: 1,
-            emoji: reaction.emoji,
-            display_name: reaction.display_name
-          })
-
-          {:reply, :ok, assign(socket, :last_reaction, now)}
-
-        {:error, reason} ->
-          {:reply, {:error, %{code: to_string(reason)}}, socket}
+        {:reply, :ok, assign(socket, :last_reaction, now)}
+      else
+        {:error, reason} -> {:reply, {:error, %{code: to_string(reason)}}, socket}
       end
     end
   end
@@ -224,6 +302,19 @@ defmodule NobarSyncWeb.RoomChannel do
   end
 
   def terminate(_, _), do: :ok
+
+  defp active_chat_actor(socket) do
+    case safe_room(socket.assigns.room_id) do
+      nil ->
+        {:error, :not_found}
+
+      room ->
+        case WatchRooms.active_member(room.id, actor(socket)) do
+          nil -> {:error, :forbidden}
+          member -> {:ok, room, member}
+        end
+    end
+  end
 
   defp safe_room(id) do
     try do

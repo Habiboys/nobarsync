@@ -1,5 +1,7 @@
 import { VoiceCall } from "./VoiceCall"
 import { Brand } from "./Brand"
+import { RoomChat, type ChatMessage } from "./RoomChat"
+import { formatChatError, shouldAutoHideControls } from "./chatHelpers"
 import { ThemeToggle } from "./ThemeToggle"
 import Hls from "hls.js"
 import { useEffect, useRef, useState, type CSSProperties } from "react"
@@ -16,7 +18,6 @@ type Playback = { media_id: string; title: string; token: string; expires_at?: n
 type Person = { id: string; display_name: string; role: string }
 type Metric = { member_id: string; lag_ms: number; buffering: boolean; paused: boolean; updated_at_ms: number }
 type Telemetry = { host_buffering: boolean; host_paused: boolean; members: Metric[] }
-type Message = { id: string; body: string; display_name: string; member_id?: string; inserted_at?: string }
 type Playlist = { id: string; votes: number; media: { id: string; title: string; status: string } | null }
 
 export function WatchRoom() {
@@ -55,18 +56,29 @@ function WatchSession({ code }: { code: string }) {
   const applyFilmRef = useRef<() => void>(() => {})
   const applyRef = useRef<(snapshot: Snapshot) => void>(() => {})
   const tickRef = useRef<() => void>(() => {})
-  const chatEndRef = useRef<HTMLDivElement>(null)
+  const lastTypingAtRef = useRef(0)
+  const typingSentRef = useRef(false)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [playback, setPlayback] = useState<Playback | null>(null)
   const [people, setPeople] = useState<Person[]>([])
   const [metrics, setMetrics] = useState<Telemetry | null>(null)
   const [role, setRole] = useState("viewer")
+  const [memberId, setMemberId] = useState("")
   const [status, setStatus] = useState("Menghubungkan ke ruang…")
   const [connected, setConnected] = useState(false)
-  const [chat, setChat] = useState<Message[]>([])
+  const [chat, setChat] = useState<ChatMessage[]>([])
+  const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
+  const [pinnedMessage, setPinnedMessage] = useState<ChatMessage | null>(null)
+  const [typingMap, setTypingMap] = useState<Record<string, { display_name: string; at: number }>>({})
   const [draft, setDraft] = useState("")
-  const [sending, setSending] = useState(false)
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+  const [editing, setEditing] = useState<ChatMessage | null>(null)
+  const [chatError, setChatError] = useState("")
   const [chatOpen, setChatOpen] = useState(true)
+  const [isNarrowFullscreen, setIsNarrowFullscreen] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 719px)").matches : false,
+  )
   const [muted, setMuted] = useState(false)
   const [volume, setVolume] = useState(1)
   const [blocked, setBlocked] = useState(false)
@@ -200,7 +212,89 @@ function WatchSession({ code }: { code: string }) {
         const presence = data.presence as Record<string, { metas: { display_name: string; role: string }[] }>
         setPeople(Object.entries(presence).map(([id, item]) => ({ id, display_name: item.metas[0]?.display_name || "Penonton", role: item.metas[0]?.role || "viewer" })))
       })
-      channel.on("chat.message", (data) => setChat((items) => [...items.filter((item) => item.id !== data.id), data as unknown as Message].slice(-100)))
+      channel.on("chat.message", (data) => {
+        const next = data as unknown as ChatMessage
+        setChat((items) => [...items.filter((item) => item.id !== next.id), next].slice(-300))
+        if (next.member_id) {
+          setTypingMap((prev) => {
+            if (!prev[next.member_id!]) return prev
+            const copy = { ...prev }
+            delete copy[next.member_id!]
+            return copy
+          })
+        }
+      })
+      channel.on("chat.edited", (data) => {
+        const updated = data as unknown as ChatMessage
+        setChat((items) =>
+          items.map((item) => {
+            if (item.id === updated.id) return { ...item, ...updated }
+            if (item.reply_to?.id === updated.id) {
+              return { ...item, reply_to: { ...item.reply_to, body: updated.body } }
+            }
+            return item
+          }),
+        )
+        setPinnedMessage((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
+        setReplyTo((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
+      })
+      channel.on("chat.deleted", (data) => {
+        const deletedId = String(data.id)
+        setChat((items) =>
+          items
+            .filter((item) => item.id !== deletedId)
+            .map((item) =>
+              item.reply_to?.id === deletedId
+                ? { ...item, reply_to: { id: deletedId, display_name: null, body: "", deleted: true } }
+                : item,
+            ),
+        )
+        setPinnedMessage((prev) => (prev?.id === deletedId ? null : prev))
+        setReplyTo((prev) => (prev?.id === deletedId ? null : prev))
+        setEditing((prev) => {
+          if (prev?.id === deletedId) {
+            setDraft("")
+            return null
+          }
+          return prev
+        })
+      })
+      channel.on("chat.reacted", (data) => {
+        const targetId = String(data.id)
+        const reactions = (data.reactions || []) as ChatMessage["reactions"]
+        setChat((items) => items.map((item) => (item.id === targetId ? { ...item, reactions } : item)))
+        setPinnedMessage((prev) => (prev?.id === targetId ? { ...prev, reactions } : prev))
+      })
+      channel.on("chat.pinned", (data) => {
+        const pinned = (data.message || null) as ChatMessage | null
+        setPinnedMessage(pinned)
+        setChat((items) =>
+          items.map((item) =>
+            item.id === pinned?.id
+              ? { ...item, pinned_at: pinned.pinned_at }
+              : item.pinned_at
+                ? { ...item, pinned_at: null }
+                : item,
+          ),
+        )
+      })
+      channel.on("chat.typing", (data) => {
+        const who = String(data.member_id || "")
+        if (!who || who === memberRef.current) return
+        if (data.typing) {
+          setTypingMap((prev) => ({
+            ...prev,
+            [who]: { display_name: String(data.display_name || "Penonton"), at: Date.now() },
+          }))
+        } else {
+          setTypingMap((prev) => {
+            if (!prev[who]) return prev
+            const copy = { ...prev }
+            delete copy[who]
+            return copy
+          })
+        }
+      })
       channel.on("reaction.broadcast", (data) => {
         const now = Date.now()
         const recent = reactionTimesRef.current.filter((time) => now - time < 900)
@@ -238,6 +332,7 @@ function WatchSession({ code }: { code: string }) {
         if (stopped) return
         const member = data.member as { id: string; role: string }
         memberRef.current = member.id
+        setMemberId(member.id)
         roleRef.current = member.role
         setRole(member.role)
         const readyRows = (data.ready || []) as { member_id: string; ready: boolean }[]
@@ -248,8 +343,11 @@ function WatchSession({ code }: { code: string }) {
         initialRef.current = true
         apply(data as unknown as Snapshot)
         void refreshClock(channel)
-        void api<{ messages: Message[] }>(`/api/v1/rooms/${code}/messages`, { signal: abort.signal }).then((history) => {
-          if (!stopped) setChat((items) => Array.from(new Map([...history.messages, ...items].map((item) => [item.id, item])).values()).slice(-100))
+        void api<{ messages: ChatMessage[]; has_more?: boolean; pinned?: ChatMessage | null }>(`/api/v1/rooms/${code}/messages`, { signal: abort.signal }).then((history) => {
+          if (stopped) return
+          setHasMoreMessages(Boolean(history.has_more))
+          setPinnedMessage(history.pinned || null)
+          setChat((items) => Array.from(new Map([...history.messages, ...items].map((item) => [item.id, item])).values()).slice(-300))
         }).catch(() => {})
         void refreshPlaylist()
       }).receive("error", (data) => { if (!stopped) { setConnected(false); setStatus(String(data.message || "Tidak dapat masuk ruang. Buka kembali tautan undangan.")) } })
@@ -457,8 +555,90 @@ function WatchSession({ code }: { code: string }) {
     for (const track of Array.from(video.textTracks)) track.mode = track.language === subtitle ? "showing" : "disabled"
   }, [subtitle, playback?.subtitles])
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-  }, [chat.length])
+    const query = window.matchMedia("(max-width: 719px)")
+    const sync = () => setIsNarrowFullscreen(query.matches)
+    sync()
+    query.addEventListener("change", sync)
+    return () => query.removeEventListener("change", sync)
+  }, [])
+  useEffect(() => {
+    const entries = Object.entries(typingMap)
+    if (!entries.length) return
+    const timer = window.setInterval(() => {
+      const cutoff = Date.now() - 3500
+      setTypingMap((prev) => {
+        let changed = false
+        const next: Record<string, { display_name: string; at: number }> = {}
+        for (const [id, info] of Object.entries(prev)) {
+          if (info.at > cutoff) next[id] = info
+          else changed = true
+        }
+        return changed ? next : prev
+      })
+    }, 800)
+    return () => window.clearInterval(timer)
+  }, [typingMap])
+  function pushChat(event: string, payload: object = {}): Promise<boolean> {
+    const channel = channelRef.current
+    if (!channel) {
+      setChatError("Koneksi ruang belum siap.")
+      return Promise.resolve(false)
+    }
+    setChatError("")
+    return new Promise((resolve) => {
+      const push = channel.push(event, { v: 1, request_id: crypto.randomUUID(), ...payload })
+      if (!push) {
+        setChatError("Koneksi ruang belum siap.")
+        resolve(false)
+        return
+      }
+      push
+        .receive("ok", () => resolve(true))
+        .receive("error", (error) => {
+          setChatError(formatChatError(error))
+          resolve(false)
+        })
+        .receive("timeout", () => {
+          setChatError("Koneksi lambat. Coba lagi.")
+          resolve(false)
+        })
+    })
+  }
+  function sendTyping(typing: boolean) {
+    const channel = channelRef.current
+    if (!channel) return
+    const now = Date.now()
+    if (typing) {
+      if (typingSentRef.current && now - lastTypingAtRef.current < 1800) return
+      lastTypingAtRef.current = now
+      typingSentRef.current = true
+      channel.push("chat.typing", { typing: true })
+    } else if (typingSentRef.current) {
+      typingSentRef.current = false
+      channel.push("chat.typing", { typing: false })
+    }
+  }
+  async function loadOlderMessages(): Promise<boolean> {
+    if (loadingOlderMessages || !hasMoreMessages || !chat.length) return false
+    setLoadingOlderMessages(true)
+    setChatError("")
+    try {
+      const oldestId = chat[0].id
+      const older = await api<{ messages: ChatMessage[]; has_more?: boolean }>(
+        `/api/v1/rooms/${code}/messages?before=${encodeURIComponent(oldestId)}`,
+      )
+      setHasMoreMessages(Boolean(older.has_more))
+      setChat((items) =>
+        Array.from(new Map([...older.messages, ...items].map((item) => [item.id, item])).values()),
+      )
+      return true
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : "Gagal memuat pesan sebelumnya.")
+      return false
+    } finally {
+      setLoadingOlderMessages(false)
+    }
+  }
   useEffect(() => {
     if (!reactions.length) return
     const wait = Math.max(0, reactions[0].at + 2200 - Date.now())
@@ -542,28 +722,47 @@ function WatchSession({ code }: { code: string }) {
   }
   useEffect(() => {
     const frame = playerNode
-    if (!fullscreen || chatOpen || !frame) { setControlsIdle(false); return }
-    let timer = 0
-    const wake = () => {
+    if (!frame || !shouldAutoHideControls({ fullscreen, hasFrame: true, chatOpen, isNarrowFullscreen })) {
       setControlsIdle(false)
+      return
+    }
+    let timer = 0
+    const controls = frame.querySelector(".player-controls")
+    const scheduleIdle = () => {
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
-        // Keep controls up while the pointer or keyboard focus is on them.
-        if (frame.querySelector(".player-controls:hover, .player-controls :focus-visible")) return
+        // Keep controls visible while pointer or focus remains on them, then retry cleanly.
+        if (
+          frame.querySelector(
+            ".player-controls:hover, .player-controls :focus-visible, .player-controls select:focus",
+          )
+        ) {
+          scheduleIdle()
+          return
+        }
         setControlsIdle(true)
       }, 2500)
+    }
+    const wake = (event?: Event) => {
+      if (event?.target instanceof Element && event.target.closest(".chat-dock")) return
+      setControlsIdle(false)
+      scheduleIdle()
     }
     wake()
     frame.addEventListener("pointermove", wake)
     frame.addEventListener("pointerdown", wake)
     frame.addEventListener("keydown", wake)
+    controls?.addEventListener("pointerleave", scheduleIdle)
+    controls?.addEventListener("focusout", scheduleIdle)
     return () => {
       window.clearTimeout(timer)
       frame.removeEventListener("pointermove", wake)
       frame.removeEventListener("pointerdown", wake)
       frame.removeEventListener("keydown", wake)
+      controls?.removeEventListener("pointerleave", scheduleIdle)
+      controls?.removeEventListener("focusout", scheduleIdle)
     }
-  }, [fullscreen, chatOpen, playerNode])
+  }, [fullscreen, chatOpen, isNarrowFullscreen, playerNode])
   useEffect(() => {
     const sync = () => setFullscreen(activeFullscreen() === frameRef.current)
     document.addEventListener("fullscreenchange", sync)
@@ -634,7 +833,46 @@ function WatchSession({ code }: { code: string }) {
     finally { setQueueBusy(false) }
   }
   const canChat = chatPermission === "everyone" || (chatPermission === "host_mod" && canControl)
-  const chatAside = <aside className={fullscreen ? "chat-panel chat-dock" : "chat-panel"}><div className="chat-heading"><div><span className="eyebrow">LIVE CONVERSATION</span><h2>Obrolan ruang</h2></div><span className="live-dot" /></div><div className="chat-messages" role="log" aria-label="Pesan ruang" aria-live="polite">{!chat.length ? <div className="chat-empty"><span>✦</span><h3>Film lebih seru bersama.</h3><p>Sapa temanmu, bahas adegan favorit, dan nikmati malamnya.</p></div> : chat.map((item) => { const mine = item.member_id ? item.member_id === memberRef.current : people.find((person) => person.id === memberRef.current)?.display_name === item.display_name; const sent = item.inserted_at ? new Date(item.inserted_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : ""; return <div className={mine ? "chat-row mine" : "chat-row"} key={item.id}><div className="chat-bubble">{mine ? null : <strong>{item.display_name}</strong>}<p>{item.body}</p>{sent ? <time>{sent}</time> : null}</div></div> })}<div ref={chatEndRef} /></div><div className="emoji-row">{["❤️", "😂", "🔥", "😮", "👏"].map((emoji) => <button key={emoji} aria-label={`Reaksi ${emoji}`} onClick={() => command("reaction.send", { emoji })}>{emoji}</button>)}</div><form className="chat-form" onSubmit={(event) => { event.preventDefault(); if (!draft.trim() || sending || !canChat) return; setSending(true); command("chat.send", { body: draft.trim() })?.receive("ok", () => { setDraft(""); setSending(false) }).receive("error", () => setSending(false)).receive("timeout", () => setSending(false)) }}><input aria-label="Pesan chat" maxLength={500} disabled={!connected || !canChat} placeholder={canChat ? "Tulis pesan…" : "Chat dibatasi host"} value={draft} onChange={(event) => setDraft(event.target.value)} /><button disabled={!connected || !canChat || !draft.trim() || sending} aria-label="Kirim pesan">↑</button></form><p className="chat-footnote">Satu film. Satu momen. Bersama.</p></aside>
+  const typingNames = Object.values(typingMap).map((entry) => entry.display_name)
+  const chatAside = (
+    <RoomChat
+      fullscreen={fullscreen}
+      connected={connected}
+      canChat={canChat}
+      canControl={canControl}
+      role={role}
+      currentMemberId={memberId}
+      people={people}
+      chat={chat}
+      hasMore={hasMoreMessages}
+      loadingOlder={loadingOlderMessages}
+      pinnedMessage={pinnedMessage}
+      typingNames={typingNames}
+      draft={draft}
+      replyTo={replyTo}
+      editing={editing}
+      chatError={chatError}
+      onDraftChange={setDraft}
+      onReplyToChange={setReplyTo}
+      onEditingChange={setEditing}
+      onClearError={() => setChatError("")}
+      onSend={async (body, replyToId) => {
+        const ok = await pushChat("chat.send", replyToId ? { body, reply_to_id: replyToId } : { body })
+        if (ok) sendTyping(false)
+        return ok
+      }}
+      onEdit={(id, body) => pushChat("chat.edit", { id, body })}
+      onDelete={(id) => pushChat("chat.delete", { id })}
+      onReact={(id, emoji) => pushChat("chat.react", { id, emoji })}
+      onPin={(id, pinned) => pushChat("chat.pin", { id, pinned })}
+      onRoomReaction={(emoji) => {
+        command("reaction.send", { emoji })
+      }}
+      onTyping={sendTyping}
+      onLoadOlder={loadOlderMessages}
+      onCloseChat={() => setChatOpen(false)}
+    />
+  )
   const chatSlot = chatOpen ? (fullscreen && playerNode ? createPortal(chatAside, playerNode) : chatAside) : null
   return (
     <main className={`watch-page ${theater ? "theater-mode" : ""}`}>
@@ -647,7 +885,7 @@ function WatchSession({ code }: { code: string }) {
               {playback?.subtitles?.map((sub) => <track key={sub.language} kind="subtitles" srcLang={sub.language} label={sub.label} src={`/media/t/${playback.token}/${sub.vtt_key}`} />)}
             </video>
             <div ref={ytNodeRef} className={`youtube-frame ${isYoutube ? "" : "hidden"}`} />
-            {isYoutube ? <div className="absolute inset-0 bottom-24" aria-hidden="true" /> : null}
+            {isYoutube ? <div className="youtube-shield" aria-hidden="true" /> : null}
             <div className="player-topline"><span>◉ {code}</span><span>{canControl ? "KONTROL HOST" : "MENGIKUTI HOST"}</span></div>
             {processing ? <div className="player-message"><div><h2>{processing.status === "failed" ? "Pengolahan gagal" : "Menyiapkan film"}</h2><p>{processing.error || "Film muncul otomatis setelah pengolahan selesai."}</p><progress max={100} value={processing.progress} /><p>{Math.round(processing.progress)}% · {processing.status}</p></div></div> : null}
             {countdown > 0 ? <div className="countdown-overlay" aria-live="polite"><span>{countdown}</span><p>Bersiap, mulai bersama</p></div> : null}
@@ -683,7 +921,7 @@ function WatchSession({ code }: { code: string }) {
             <button className="secondary-button" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}/j/${code}`).then(() => setStatus("Tautan undangan disalin")).catch(() => setStatus(`Tautan: ${window.location.origin}/j/${code}`))}>Undang teman ↗</button>
           </div>
           <section className="audience-panel"><div className="section-title"><div><h2>Menonton bersama <span>{people.length}</span></h2></div><small>Selisih pemutaran terhadap host</small></div><div className="audience-grid">
-            {people.map((person) => { const metric = metrics?.members.find((item) => item.member_id === person.id); const stale = !metric || Date.now() - metric.updated_at_ms > 8000; const lag = metric?.lag_ms || 0; return <article key={person.id} className="audience-card"><div className={`avatar ${person.role === "host" ? "host-avatar" : ""}`}>{person.display_name.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><strong className="block truncate">{person.display_name}{person.id === memberRef.current ? " (kamu)" : ""}</strong><small>{person.role === "host" ? "♛ Host" : person.role === "moderator" ? "Moderator" : "Penonton"}{readiness[person.id] ? " · ✓ Siap" : ""}</small><div className="mt-2"><Badge tone={stale || metric?.buffering ? "amber" : Math.abs(lag) > 1500 ? "red" : "green"}>{stale ? "Menunggu status" : metric?.buffering ? "Buffering" : Math.abs(lag) <= 500 ? "Tersinkron" : `${lag > 0 ? "Lebih cepat" : "Tertinggal"} ${lagLabel(lag)}`}</Badge></div></div>{role === "host" && person.role !== "host" ? <details className="member-menu"><summary aria-label={`Kelola ${person.display_name}`}>•••</summary><button onClick={() => void action("transfer-host", { member_id: person.id })}>Jadikan host</button><button onClick={() => void action("kick", { member_id: person.id })}>Keluarkan</button></details> : null}</article> })}
+            {people.map((person) => { const metric = metrics?.members.find((item) => item.member_id === person.id); const stale = !metric || Date.now() - metric.updated_at_ms > 8000; const lag = metric?.lag_ms || 0; return <article key={person.id} className="audience-card"><div className={`avatar ${person.role === "host" ? "host-avatar" : ""}`}>{person.display_name.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><strong className="block truncate">{person.display_name}{person.id === memberId ? " (kamu)" : ""}</strong><small>{person.role === "host" ? "♛ Host" : person.role === "moderator" ? "Moderator" : "Penonton"}{readiness[person.id] ? " · ✓ Siap" : ""}</small><div className="mt-2"><Badge tone={stale || metric?.buffering ? "amber" : Math.abs(lag) > 1500 ? "red" : "green"}>{stale ? "Menunggu status" : metric?.buffering ? "Buffering" : Math.abs(lag) <= 500 ? "Tersinkron" : `${lag > 0 ? "Lebih cepat" : "Tertinggal"} ${lagLabel(lag)}`}</Badge></div></div>{role === "host" && person.role !== "host" ? <details className="member-menu"><summary aria-label={`Kelola ${person.display_name}`}>•••</summary><button onClick={() => void action("transfer-host", { member_id: person.id })}>Jadikan host</button><button onClick={() => void action("kick", { member_id: person.id })}>Keluarkan</button></details> : null}</article> })}
             {!people.length ? <p className="text-sm text-mist">Menghubungkan peserta…</p> : null}
           </div></section>
           <VoiceCall code={code} roomConnected={connected} dock={playerNode} joinDock={micSlot} fullscreen={fullscreen} showMic={micOpen} onSpeechDuck={onSpeechDuck} />

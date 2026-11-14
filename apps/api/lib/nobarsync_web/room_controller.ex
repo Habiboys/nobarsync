@@ -289,10 +289,17 @@ defmodule NobarSyncWeb.RoomController do
     end
   end
 
-  def messages(conn, %{"code" => code}) do
+  def messages(conn, %{"code" => code} = params) do
     with %{} = room <- WatchRooms.get_room_by_code(code),
          %{} <- WatchRooms.active_member(room.id, actor(conn)) do
-      json(conn, %{messages: Enum.map(Messaging.list_messages(room.id), &message_json/1)})
+      {messages, has_more} = Messaging.list_messages_page(room.id, params["before"])
+      pinned = Messaging.get_pinned_message(room.id)
+
+      json(conn, %{
+        messages: Enum.map(messages, &Messaging.serialize_message/1),
+        has_more: has_more,
+        pinned: pinned && Messaging.serialize_message(pinned)
+      })
     else
       nil -> {:error, :not_found}
     end
@@ -351,16 +358,6 @@ defmodule NobarSyncWeb.RoomController do
       display_name: member.display_name,
       role: member.role,
       user_id: member.user_id
-    }
-  end
-
-  defp message_json(message) do
-    %{
-      id: message.id,
-      body: message.body,
-      display_name: message.display_name,
-      member_id: message.member_id,
-      inserted_at: message.inserted_at
     }
   end
 
